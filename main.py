@@ -5,7 +5,13 @@ from telethon.sessions import StringSession
 api_id = int(os.getenv("TELEGRAM_API_ID"))
 api_hash = os.getenv("TELEGRAM_API_HASH")
 
-session = os.getenv("TELEGRAM_SESSION", "").strip().strip('"').strip("'")
+raw_session = os.getenv("TELEGRAM_SESSION", "")
+session = "".join(raw_session.split()).strip('"').strip("'")
+
+print("SESSION LENGTH:", len(session), flush=True)
+print("SESSION FIRST CHAR:", session[:1], flush=True)
+
+client = TelegramClient(StringSession(session), api_id, api_hash)
 
 print("SESSION LENGTH:", len(session))
 print("SESSION FIRST CHAR:", session[:1])
