@@ -324,11 +324,11 @@ async def handler(event):
 
     if not request_found:
         return
-            score = calculate_score(
+    score = calculate_score(
         text_lower,
         equipment_found,
         location_found
-    )
+)
 
 
     # 4. Обязательно наша география
@@ -339,6 +339,10 @@ async def handler(event):
 
     if not location_found:
         return
+    score = calculate_score(
+        text_lower,
+        equipment_found,
+        location_found
 
 
     # 5. ОБЯЗАТЕЛЬНО телефон
