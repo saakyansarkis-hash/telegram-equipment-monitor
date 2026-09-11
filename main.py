@@ -1,10 +1,12 @@
 import os
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 
 api_id = int(os.getenv("TELEGRAM_API_ID"))
 api_hash = os.getenv("TELEGRAM_API_HASH")
 
-client = TelegramClient("monitor", api_id, api_hash)
+session = os.getenv("TELEGRAM_SESSION")
+client = TelegramClient(StringSession(session), api_id, api_hash)
 
 keywords = [
     "нужен экскаватор-погрузчик",
