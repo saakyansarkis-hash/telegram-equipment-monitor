@@ -290,6 +290,8 @@ def send_to_bot(message):
 # МОНИТОРИНГ TELEGRAM
 # =========================
 
+seen_phones = set()
+
 @client.on(events.NewMessage)
 async def handler(event):
 
@@ -324,11 +326,7 @@ async def handler(event):
 
     if not request_found:
         return
-    score = calculate_score(
-        text_lower,
-        equipment_found,
-        location_found
-)
+    
 
 
     # 4. Обязательно наша география
@@ -350,7 +348,10 @@ async def handler(event):
 
     if not phone:
         return
+    if phone in seen_phones:
+        return
 
+    seen_phones.add(phone)
 
     try:
 
