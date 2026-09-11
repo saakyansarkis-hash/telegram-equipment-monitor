@@ -108,10 +108,49 @@ equipment_words = [
 
 
 # Слова, которые обычно показывают, что технику ИЩУТ
-request_words = [def calculate_score(text, equipment_found, location_found):
+request_words = [
+    "нужен",
+    "нужна",
+    "нужно",
+    "нужны",
+    "требуется",
+    "требуются",
+    "ищу",
+    "ищем",
+    "кто может",
+    "кто сможет",
+    "кто есть",
+    "есть кто",
+    "необходим",
+    "необходима",
+    "необходимы",
+    "возьму в аренду",
+    "арендовать",
+    "аренда",
+    "дайте контакт",
+    "подскажите кто",
+    "куплю",
+    "купим",
+    "закупаем",
+    "закупим",
+    "нужен материал",
+    "нужны материалы",
+    "нужна доставка",
+    "нужно с доставкой",
+    "с доставкой",
+    "требуется материал",
+    "требуются материалы",
+    "кто возит",
+    "кто привезет",
+    "кто привезёт",
+    "кто продает",
+    "кто продаёт",
+]
+
+
+def calculate_score(text, equipment_found, location_found):
     score = 1
 
-    # Срочность
     if any(word in text for word in [
         "срочно",
         "сегодня",
@@ -127,7 +166,6 @@ request_words = [def calculate_score(text, equipment_found, location_found):
     ]):
         score += 2
 
-    # Приоритетная техника
     if any(word in text for word in [
         "экскаватор-погрузчик",
         "экскаватор погрузчик",
@@ -148,7 +186,6 @@ request_words = [def calculate_score(text, equipment_found, location_found):
     ]):
         score += 2
 
-    # Материалы
     if any(word in text for word in [
         "асфальтная крошка",
         "асфальтовая крошка",
@@ -160,7 +197,6 @@ request_words = [def calculate_score(text, equipment_found, location_found):
     ]):
         score += 2
 
-    # География
     if any(city in text for city in [
         "люберцы",
         "люберцах",
@@ -168,6 +204,7 @@ request_words = [def calculate_score(text, equipment_found, location_found):
     ]):
         score += 1
 
+    
     return min(score, 10)
     "нужен",
     "нужна",
