@@ -1,10 +1,15 @@
 import os
+import re
 import urllib.parse
 import urllib.request
 
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
+
+# =========================
+# НАСТРОЙКИ
+# =========================
 
 api_id = int(os.getenv("TELEGRAM_API_ID"))
 api_hash = os.getenv("TELEGRAM_API_HASH")
@@ -21,33 +26,142 @@ client = TelegramClient(
 )
 
 
-keywords = [
-    "нужен экскаватор",
-    "ищу экскаватор",
-    "требуется экскаватор",
-    "экскаватор-погрузчик",
-    "экскаватор погрузчик",
-    "нужен погрузчик",
-    "ищу погрузчик",
-    "нужен мини-погрузчик",
-    "нужен мини погрузчик",
-    "ищу мини-погрузчик",
-    "ищу мини погрузчик",
-    "нужен каток",
-    "ищу каток",
-    "требуется каток",
-    "аренда экскаватора",
-    "аренда погрузчика",
-    "аренда спецтехники",
+# =========================
+# ГЕОГРАФИЯ
+# =========================
+
+locations = [
+    "люберцы",
+    "люберцах",
+    "люберец",
+    "лыткарино",
+    "жуковский",
+    "жуковском",
+
+    "котельники",
+    "дзержинский",
+    "дзержинском",
+    "томилино",
+    "красково",
+    "малаховка",
+    "октябрьский",
+    "быково",
+    "раменское",
+    "раменском",
 ]
 
+
+# =========================
+# СПЕЦТЕХНИКА
+# =========================
+
+equipment_words = [
+    "экскаватор",
+    "экскаватор-погрузчик",
+    "экскаватор погрузчик",
+    "экскаватора-погрузчика",
+    "экскаватора погрузчика",
+    "jcb",
+    "джсб",
+    "погрузчик",
+    "мини-погрузчик",
+    "мини погрузчик",
+    "минипогрузчик",
+    "бобкат",
+    "bobcat",
+    "каток",
+    "спецтехника",
+    "спецтехнику",
+]
+
+
+# Слова, которые обычно показывают, что технику ИЩУТ
+request_words = [
+    "нужен",
+    "нужна",
+    "нужно",
+    "нужны",
+    "требуется",
+    "требуются",
+    "ищу",
+    "ищем",
+    "ищут",
+    "кто может",
+    "кто сможет",
+    "есть кто",
+    "необходим",
+    "необходима",
+    "необходимы",
+    "аренда",
+    "арендовать",
+    "возьму в аренду",
+    "дайте контакт",
+    "нужна техника",
+    "нужна спецтехника",
+]
+
+
+# Явный мусор / объявления
 exclude_words = [
     "продам",
     "продаю",
+    "продается",
+    "продаётся",
     "вакансия",
     "ищу работу",
+    "ищет работу",
+    "машинист ищет работу",
+    "водитель ищет работу",
+    "резюме",
 ]
 
+
+# =========================
+# ПОИСК ТЕЛЕФОНА
+# =========================
+
+phone_pattern = re.compile(
+    r"""
+    (?:
+        (?:\+7|8)
+        [\s\-\(\)]*
+        \d{3}
+        [\s\-\(\)]*
+        \d{3}
+        [\s\-]*
+        \d{2}
+        [\s\-]*
+        \d{2}
+    )
+    """,
+    re.VERBOSE
+)
+
+
+def find_phone(text):
+    match = phone_pattern.search(text)
+
+    if not match:
+        return None
+
+    phone = match.group(0)
+
+    # Оставляем только цифры
+    digits = re.sub(r"\D", "", phone)
+
+    # 8XXXXXXXXXX -> 7XXXXXXXXXX
+    if len(digits) == 11 and digits.startswith("8"):
+        digits = "7" + digits[1:]
+
+    if len(digits) != 11 or not digits.startswith("7"):
+        return None
+
+    return "+" + digits
+
+
+# =========================
+# ОТПРАВКА В БОТА
+# =========================
 
 def send_to_bot(message):
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -64,8 +178,13 @@ def send_to_bot(message):
         return response.read()
 
 
+# =========================
+# МОНИТОРИНГ TELEGRAM
+# =========================
+
 @client.on(events.NewMessage)
 async def handler(event):
+
     text = (event.message.message or "").strip()
 
     if not text:
@@ -73,58 +192,114 @@ async def handler(event):
 
     text_lower = text.lower()
 
+
+    # 1. Отсекаем рекламу и вакансии
     if any(word in text_lower for word in exclude_words):
         return
 
-    matched = [word for word in keywords if word in text_lower]
 
-    if not matched:
+    # 2. В сообщении обязательно должна быть спецтехника
+    equipment_found = [
+        word for word in equipment_words
+        if word in text_lower
+    ]
+
+    if not equipment_found:
         return
 
+
+    # 3. Должен быть признак заявки
+    request_found = [
+        word for word in request_words
+        if word in text_lower
+    ]
+
+    if not request_found:
+        return
+
+
+    # 4. Обязательно наша география
+    location_found = [
+        location for location in locations
+        if location in text_lower
+    ]
+
+    if not location_found:
+        return
+
+
+    # 5. ОБЯЗАТЕЛЬНО телефон
+    phone = find_phone(text)
+
+    if not phone:
+        return
+
+
     try:
+
         chat = await event.get_chat()
         sender = await event.get_sender()
 
         chat_name = getattr(chat, "title", None) or "Личный чат"
 
         username = getattr(sender, "username", None)
+
         sender_name = (
             f"@{username}"
             if username
             else getattr(sender, "first_name", None) or "Не указан"
         )
 
+
+        # Ссылка на оригинальное сообщение
+        message_link = ""
+
         chat_username = getattr(chat, "username", None)
 
-        message_link = ""
         if chat_username:
             message_link = (
-                f"\n\n🔗 Ссылка:\n"
+                f"\n\n🔗 Открыть заявку:\n"
                 f"https://t.me/{chat_username}/{event.message.id}"
             )
 
+
         alert = (
-            "🔥 НАЙДЕНА ЗАЯВКА НА СПЕЦТЕХНИКУ\n\n"
-            f"📍 Группа: {chat_name}\n"
+            "🔥 ГОРЯЧАЯ ЗАЯВКА\n\n"
+
+            f"📍 Район: {', '.join(location_found)}\n"
+            f"🚜 Техника: {', '.join(equipment_found)}\n\n"
+
+            f"📞 ТЕЛЕФОН:\n"
+            f"{phone}\n\n"
+
+            f"💬 Заявка:\n"
+            f"{text}\n\n"
+
             f"👤 Автор: {sender_name}\n"
-            f"🔎 Совпадение: {', '.join(matched)}\n\n"
-            f"💬 Сообщение:\n{text}"
+            f"📢 Группа: {chat_name}"
+
             f"{message_link}"
         )
 
+
         send_to_bot(alert)
 
-        print("Заявка отправлена в Telegram-бот", flush=True)
+        print(
+            f"Отправлена заявка: {phone} / {location_found}",
+            flush=True
+        )
+
 
     except Exception as error:
-        print("Ошибка обработки сообщения:", error, flush=True)
+
+        print(
+            "Ошибка обработки сообщения:",
+            error,
+            flush=True
+        )
 
 
-print("Монитор Telegram запущен", flush=True)
-
-client.start()
-client.run_until_disconnected()
-
+print("Монитор заявок запущен", flush=True)
 
 client.start()
 client.run_until_disconnected()
