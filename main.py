@@ -308,6 +308,11 @@ async def handler(event):
 
     if not request_found:
         return
+            score = calculate_score(
+        text_lower,
+        equipment_found,
+        location_found
+    )
 
 
     # 4. Обязательно наша география
@@ -356,6 +361,7 @@ async def handler(event):
 
 
         alert = (
+                    f"🔥 ПРИОРИТЕТ: {score}/10\n\n"
             "🔥 ГОРЯЧАЯ ЗАЯВКА\n\n"
 
             f"📍 Район: {', '.join(location_found)}\n"
