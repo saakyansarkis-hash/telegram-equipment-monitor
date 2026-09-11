@@ -343,7 +343,7 @@ async def handler(event):
         text_lower,
         equipment_found,
         location_found
-
+    )
 
     # 5. ОБЯЗАТЕЛЬНО телефон
     phone = find_phone(text)
