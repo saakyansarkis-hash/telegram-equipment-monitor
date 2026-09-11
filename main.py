@@ -108,7 +108,67 @@ equipment_words = [
 
 
 # Слова, которые обычно показывают, что технику ИЩУТ
-request_words = [
+request_words = [def calculate_score(text, equipment_found, location_found):
+    score = 1
+
+    # Срочность
+    if any(word in text for word in [
+        "срочно",
+        "сегодня",
+        "прямо сейчас",
+        "в течение часа"
+    ]):
+        score += 3
+
+    elif any(word in text for word in [
+        "завтра",
+        "на завтра",
+        "утром"
+    ]):
+        score += 2
+
+    # Приоритетная техника
+    if any(word in text for word in [
+        "экскаватор-погрузчик",
+        "экскаватор погрузчик",
+        "jcb",
+        "джсб"
+    ]):
+        score += 3
+
+    elif "каток" in text:
+        score += 3
+
+    elif any(word in text for word in [
+        "мини-погрузчик",
+        "мини погрузчик",
+        "минипогрузчик",
+        "bobcat",
+        "бобкат"
+    ]):
+        score += 2
+
+    # Материалы
+    if any(word in text for word in [
+        "асфальтная крошка",
+        "асфальтовая крошка",
+        "асфальтный скол",
+        "бой бетона",
+        "бой бетонный",
+        "щебень",
+        "песок"
+    ]):
+        score += 2
+
+    # География
+    if any(city in text for city in [
+        "люберцы",
+        "люберцах",
+        "лыткарино"
+    ]):
+        score += 1
+
+    return min(score, 10)
     "нужен",
     "нужна",
     "нужно",
