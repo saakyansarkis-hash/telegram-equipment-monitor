@@ -336,7 +336,15 @@ async def handler(event):
         word for word in equipment_words
         if word in text_lower
     ]
-
+    if "экскаватор-погрузчик" in equipment_found:
+        equipment_found = ["экскаватор-погрузчик"]
+    elif "экскаватор погрузчик" in equipment_found:
+        equipment_found = ["экскаватор погрузчик"]
+    elif "мини-погрузчик" in equipment_found:
+        equipment_found = ["мини-погрузчик"]
+    elif "мини погрузчик" in equipment_found:
+        equipment_found = ["мини погрузчик"]
+    
     material_found = [
         word for word in material_words
         if word in text_lower
