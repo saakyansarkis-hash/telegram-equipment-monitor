@@ -312,19 +312,19 @@ async def handler(event):
 
 
     # 2. В сообщении обязательно должна быть спецтехника
-   equipment_found = [
-    word for word in equipment_words
-    if word in text_lower
-]
+    equipment_found = [
+        word for word in equipment_words
+        if word in text_lower
+    ]
 
-   material_found = [
-    word for word in material_words
-    if word in text_lower
-]
+    material_found = [
+        word for word in material_words
+        if word in text_lower
+    ]
 
-   if not equipment_found and not material_found:
-    print("REJECT: equipment/material", flush=True)
-    return
+    if not equipment_found and not material_found:
+        print("REJECT: equipment/material", flush=True)
+        return
 
 
     # 3. Должен быть признак заявки
