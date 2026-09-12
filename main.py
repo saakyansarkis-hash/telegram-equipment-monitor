@@ -315,6 +315,7 @@ async def handler(event):
     ]
 
     if not equipment_found:
+        print("REJECT: equipment", flush=True)
         return
 
 
@@ -325,6 +326,7 @@ async def handler(event):
     ]
 
     if not request_found:
+        print("REJECT: request", flush=True)
         return
     
 
@@ -336,6 +338,7 @@ async def handler(event):
     ]
 
     if not location_found:
+        print("REJECT: location", flush=True)
         return
     score = calculate_score(
         text_lower,
