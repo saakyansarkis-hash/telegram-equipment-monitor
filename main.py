@@ -314,6 +314,9 @@ async def handler(event):
         word for word in equipment_words
         if word in text_lower
     ]
+    print("DEBUG equipment_found:", equipment_found, flush=True)
+    print("DEBUG excavator:", "экскаватор" in text_lower, flush=True)
+    print("DEBUG first_words:", equipment_words[:5], flush=True)
 
     if not equipment_found:
         print("REJECT: equipment", flush=True)
