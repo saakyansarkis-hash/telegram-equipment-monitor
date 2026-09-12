@@ -149,7 +149,26 @@ request_words = [
     "купим",
     "закупаем",
 ]
-
+# Отсекаем рекламу и предложения услуг
+ad_exclude_words = [
+    "помощь диспетчера",
+    "по размещению рекламы",
+    "размещение рекламы",
+    "услуги спецтехники",
+    "предлагаем спецтехнику",
+    "сдам в аренду",
+    "сдаю в аренду",
+    "сдаем в аренду",
+    "наша техника",
+    "наш автопарк",
+    "в наличии техника",
+    "вакансия",
+    "ищу работу",
+    "ищет работу",
+    "требуется машинист",
+    "требуется водитель",
+    "резюме",
+]
 
 def calculate_score(text, equipment_found, location_found):
     score = 1
@@ -307,7 +326,8 @@ async def handler(event):
 
 
     # 1. Отсекаем рекламу и вакансии
-    if any(word in text_lower for word in exclude_words):
+    if any(word in text_lower for word in exclude_words + ad_exclude_words):
+        print("REJECT: advertising", flush=True)
         return
 
 
