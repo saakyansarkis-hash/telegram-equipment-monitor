@@ -408,7 +408,7 @@ async def handler(event):
         print("REJECT: duplicate", flush=True)
         return
 
-seen_leads.add(lead_key)
+    seen_leads.add(lead_key)
 
     try:
 
