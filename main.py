@@ -87,7 +87,20 @@ equipment_words = [
     "дорожные работы",
     "асфальтирование",
 
-    # Материалы
+        # Работы
+    "копать",
+    "копка",
+    "котлован",
+    "траншея",
+    "планировка",
+    "вывоз грунта",
+    "вывоз земли",
+    "земляные работы",
+    "дорожные работы",
+    "асфальтирование",
+]
+# Материалы
+material_words = [
     "песок",
     "песка",
     "щебень",
@@ -299,15 +312,19 @@ async def handler(event):
 
 
     # 2. В сообщении обязательно должна быть спецтехника
-    equipment_found = [
-        word for word in equipment_words
-        if word in text_lower
-    ]
-   
+   equipment_found = [
+    word for word in equipment_words
+    if word in text_lower
+]
 
-    if not equipment_found:
-        print("REJECT: equipment", flush=True)
-        return
+   material_found = [
+    word for word in material_words
+    if word in text_lower
+]
+
+   if not equipment_found and not material_found:
+    print("REJECT: equipment/material", flush=True)
+    return
 
 
     # 3. Должен быть признак заявки
@@ -374,13 +391,23 @@ async def handler(event):
                 f"https://t.me/{chat_username}/{event.message.id}"
             )
 
+        equipment_line = (
+            f"🚜 Техника: {', '.join(equipment_found)}\n"
+            if equipment_found else ""
+)
 
+        material_line = (
+            f"🧱 Материал: {', '.join(material_found)}\n"
+            if material_found else ""
+)
         alert = (
-                    f"🔥 ПРИОРИТЕТ: {score}/10\n\n"
+            f"🔥 ПРИОРИТЕТ: {score}/10\n\n"
+            f"{equipment_line}"
+            f"{material_line}\n"
             "🔥 ГОРЯЧАЯ ЗАЯВКА\n\n"
 
             f"📍 Район: {', '.join(location_found)}\n"
-            f"🚜 Техника: {', '.join(equipment_found)}\n\n"
+            
 
             f"📞 ТЕЛЕФОН:\n"
             f"{phone}\n\n"
