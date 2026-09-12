@@ -296,7 +296,7 @@ seen_phones = set()
 async def handler(event):
 
     text = (event.message.message or "").strip()
-
+    print("ПОЛУЧЕНО ИЗ TELEGRAM:", текст, flush=True)
     if not text:
         return
 
