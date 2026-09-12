@@ -327,6 +327,7 @@ def send_to_bot(message):
 # =========================
 
 seen_phones = set()
+seen_leads = set()
 
 @client.on(events.NewMessage)
 async def handler(event):
@@ -401,10 +402,13 @@ async def handler(event):
 
     if not phone:
         return
-    if phone in seen_phones:
+    lead_key = (phone, " ".join(text_lower.split()))
+
+    if lead_key in seen_leads:
+        print("REJECT: duplicate", flush=True)
         return
 
-    seen_phones.add(phone)
+seen_leads.add(lead_key)
 
     try:
 
