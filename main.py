@@ -342,7 +342,11 @@ async def handler(event):
         return
 
     text_lower = text.lower()
+    sender_check = await event.get_sender()
 
+    if getattr(sender_check, "username", None) == "spec_clients_bot":
+        print("REJECT: own notification bot", flush=True)
+        return
 
     # 1. Отсекаем рекламу и вакансии
     if any(word in text_lower for word in exclude_words + ad_exclude_words):
