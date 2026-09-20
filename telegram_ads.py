@@ -13,20 +13,48 @@ client = TelegramClient(
     api_hash
 )
 
+keywords = [
+    "спецтех",
+    "экскават",
+    "погруз",
+    "аренд",
+    "строй",
+    "строител",
+    "дорож",
+    "щеб",
+    "песок",
+    "грунт",
+    "асфальт",
+    "любер",
+    "котельник",
+    "лыткар",
+    "москва"
+]
+
 
 async def main():
     await client.start()
 
-    print("=== TELEGRAM ADS: СПИСОК ГРУПП ===", flush=True)
+    print("=== ПОДХОДЯЩИЕ ГРУППЫ ДЛЯ ОБЪЯВЛЕНИЯ ===", flush=True)
+
+    count = 0
 
     async for dialog in client.iter_dialogs():
-        if dialog.is_group:
+        if not dialog.is_group:
+            continue
+
+        name = dialog.name or ""
+        name_lower = name.lower()
+
+        if any(word in name_lower for word in keywords):
+            count += 1
             print(
-                f"GROUP | {dialog.name} | ID: {dialog.id}",
+                f"GROUP | {name} | ID: {dialog.id}",
                 flush=True
             )
 
-    print("=== КОНЕЦ СПИСКА ===", flush=True)
+    print(f"=== НАЙДЕНО ГРУПП: {count} ===", flush=True)
+    print("=== НИ ОДНО СООБЩЕНИЕ НЕ ОТПРАВЛЕНО ===", flush=True)
 
 
 with client:
