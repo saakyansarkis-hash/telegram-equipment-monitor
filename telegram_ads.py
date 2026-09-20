@@ -2,9 +2,6 @@ import os
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
-
-# ===== TELEGRAM =====
-
 api_id = int(os.environ["TELEGRAM_API_ID"])
 api_hash = os.environ["TELEGRAM_API_HASH"]
 session = os.environ["TELEGRAM_SESSION"]
@@ -15,9 +12,7 @@ client = TelegramClient(
     api_hash
 )
 
-
-# ===== БЕЛЫЙ СПИСОК ГРУПП =====
-
+# ТОЛЬКО ЭТИ ГРУППЫ РАЗРЕШЕНЫ
 allowed_group_ids = {
     -1003131421027,
     -1001809918387,
@@ -50,22 +45,21 @@ allowed_group_ids = {
 
 
 async def main():
-
     await client.start()
 
-    print(
-        "=== ПРОВЕРКА ГРУПП ДЛЯ ОБЪЯВЛЕНИЙ ===",
-        flush=True
-    )
+    print("=== ПРОВЕРКА БЕЛОГО СПИСКА ===", flush=True)
 
-    found_ids = set()
+    found = 0
 
     async for dialog in client.iter_dialogs():
+
+        if not dialog.is_group:
+            continue
 
         if dialog.id not in allowed_group_ids:
             continue
 
-        found_ids.add(dialog.id)
+        found += 1
 
         print(
             f"OK | {dialog.name} | ID: {dialog.id}",
@@ -73,22 +67,13 @@ async def main():
         )
 
     print(
-        f"=== НАЙДЕНО: {len(found_ids)} ИЗ {len(allowed_group_ids)} ===",
+        f"=== НАЙДЕНО: {found} ИЗ {len(allowed_group_ids)} ===",
         flush=True
     )
 
-    missing_ids = allowed_group_ids - found_ids
-
-    if missing_ids:
-        print("=== НЕ НАЙДЕНЫ ===", flush=True)
-
-        for group_id in missing_ids:
-            print(group_id, flush=True)
-
-    print(
-        "=== СООБЩЕНИЯ НЕ ОТПРАВЛЯЛИСЬ ===",
-        flush=True
-    )
+    # ВАЖНО:
+    # Пока ничего автоматически не отправляем.
+    print("=== СООБЩЕНИЯ НЕ ОТПРАВЛЯЛИСЬ ===", flush=True)
 
 
 with client:
