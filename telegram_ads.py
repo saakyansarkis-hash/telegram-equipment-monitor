@@ -20,7 +20,6 @@ client = TelegramClient(
     api_hash
 )
 
-# Только выбранные нами группы
 GROUP_IDS = [
     -1003131421027,
     -1001809918387,
@@ -89,36 +88,23 @@ async def main():
                 flush=True
             )
 
-            await client.send_message(
-                entity,
-                MESSAGE
-            )
+            await client.send_message(entity, MESSAGE)
 
             sent += 1
+            print(f"OK: {group_name}", flush=True)
 
-            print(
-                f"OK: {group_name}",
-                flush=True
-            )
-
-            # Спокойная пауза между группами
+            # Пауза 3–5 минут между группами
             wait_seconds = random.randint(180, 300)
-
-            print(
-                f"Пауза {wait_seconds} сек.",
-                flush=True
-            )
+            print(f"Пауза {wait_seconds} сек.", flush=True)
 
             await asyncio.sleep(wait_seconds)
 
         except SlowModeWaitError as e:
             skipped += 1
-
             print(
                 f"ПРОПУСК: медленный режим, ждать {e.seconds} сек. | {group_id}",
                 flush=True
             )
-
             continue
 
         except FloodWaitError as e:
@@ -126,28 +112,22 @@ async def main():
                 f"FLOOD WAIT: Telegram требует ждать {e.seconds} сек. Рассылка остановлена.",
                 flush=True
             )
-
-            # При общем ограничении Telegram прекращаем запуск
             break
 
         except ChatWriteForbiddenError:
             skipped += 1
-
             print(
-                f"ПРОПУСК: отправка сообщений запрещена | {group_id}",
+                f"ПРОПУСК: отправка запрещена | {group_id}",
                 flush=True
             )
-
             continue
 
         except Exception as e:
             skipped += 1
-
             print(
                 f"ПРОПУСК {group_id}: {type(e).__name__}: {e}",
                 flush=True
             )
-
             continue
 
     print("", flush=True)
