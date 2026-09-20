@@ -38,7 +38,8 @@ message = """🚜 СВОБОДЕН ЭКСКАВАТОР-ПОГРУЗЧИК
 
 async def main():
     await client.start()
-
+    group = await client.get_entity(TEST_GROUP_ID)
+    print(f"НАЗВАНИЕ ТЕСТОВОЙ ГРУППЫ: {group.title}", flush=True)
     print("=== ТЕСТ ОТПРАВКИ ===", flush=True)
     print(f"Группа: {TEST_GROUP_ID}", flush=True)
 
