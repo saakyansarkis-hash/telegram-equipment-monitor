@@ -213,7 +213,19 @@ ad_exclude_words = [
     "аренда спецтехники",
     "сдам спецтехнику",
     "сдается техника",
-    "сдаётся техника",
+    "сдаётся техника",   
+    "требуется рабочий",
+    "требуются рабочие",
+    "требуются сотрудники",
+    "требуется сотрудник",
+    "ищем рабочих",
+    "ищем сотрудников",
+    "набор рабочих",
+    "набор сотрудников",
+    "гражданство:",
+    "оплата:",
+    "график:",
+    "фото паспорта",
 ]
 
 def calculate_score(text, equipment_found, location_found):
@@ -398,8 +410,9 @@ async def handler(event):
     
     material_found = [
         word for word in material_words
-        if word in text_lower
+        if re.search(r'(?<!\w)' + re.escape(word) + r'(?!\w)', text_lower)
     ]
+    
 
     if not equipment_found and not material_found:
         print("REJECT: equipment/material", flush=True)
