@@ -1,6 +1,8 @@
 import os
+import asyncio
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+from telethon.errors import FloodWaitError
 
 api_id = int(os.environ["TELEGRAM_API_ID"])
 api_hash = os.environ["TELEGRAM_API_HASH"]
@@ -12,68 +14,56 @@ client = TelegramClient(
     api_hash
 )
 
-# ТОЛЬКО ЭТИ ГРУППЫ РАЗРЕШЕНЫ
-allowed_group_ids = {
-    -1003131421027,
-    -1001809918387,
-    -1001539684326,
-    -1001441296814,
-    -1001418585777,
-    -1002490441950,
-    -1001415675181,
-    -1001685481181,
-    -1001856584867,
-    -1002350807807,
-    -1001276185967,
-    -1003724018857,
-    -1001118491651,
-    -1002061929686,
-    -1001459409687,
-    -1001306098132,
-    -1003306039720,
-    -1001301136511,
-    -1001278195228,
-    -1001222872680,
-    -1001228954856,
-    -1002375169218,
-    -1001419440228,
-    -1001882638967,
-    -1003481966234,
-    -1003627473505,
-    -1001246232066,
-}
+# ТЕСТ: отправляем только в ОДНУ группу
+TEST_GROUP_ID = -1003131421027
+
+message = """🚜 СВОБОДЕН ЭКСКАВАТОР-ПОГРУЗЧИК
+
+Аренда экскаватора-погрузчика с машинистом.
+
+✅ Копка траншей и котлованов
+✅ Планировка территории
+✅ Погрузка грунта, щебня, песка
+✅ Земляные и погрузочные работы
+✅ Работа по сменам
+
+📍 Москва, ЮВАО и Московская область
+⚡ Оперативная подача
+
+📞 8 (969) 031-55-08
+💬 WhatsApp / Telegram
+
+Техника свободна — звоните!"""
 
 
 async def main():
     await client.start()
 
-    print("=== ПРОВЕРКА БЕЛОГО СПИСКА ===", flush=True)
+    print("=== ТЕСТ ОТПРАВКИ ===", flush=True)
+    print(f"Группа: {TEST_GROUP_ID}", flush=True)
 
-    found = 0
-
-    async for dialog in client.iter_dialogs():
-
-        if not dialog.is_group:
-            continue
-
-        if dialog.id not in allowed_group_ids:
-            continue
-
-        found += 1
+    try:
+        await client.send_message(
+            TEST_GROUP_ID,
+            message
+        )
 
         print(
-            f"OK | {dialog.name} | ID: {dialog.id}",
+            "=== УСПЕШНО: ТЕСТОВОЕ ОБЪЯВЛЕНИЕ ОТПРАВЛЕНО ===",
             flush=True
         )
 
-    print(
-        f"=== НАЙДЕНО: {found} ИЗ {len(allowed_group_ids)} ===",
-        flush=True
-    )
+    except FloodWaitError as e:
+        print(
+            f"FLOOD WAIT: Telegram просит подождать {e.seconds} сек.",
+            flush=True
+        )
 
-    # ВАЖНО:
-    # Пока ничего автоматически не отправляем.
-    print("=== СООБЩЕНИЯ НЕ ОТПРАВЛЯЛИСЬ ===", flush=True)
+    except Exception as e:
+        print(
+            f"ОШИБКА ОТПРАВКИ: {type(e).__name__}: {e}",
+            flush=True
+        )
 
 
 with client:
