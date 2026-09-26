@@ -375,9 +375,7 @@ seen_leads = set()
 
 @client.on(events.NewMessage)
 async def handler(event):
-   
     print("ПОЛУЧЕНО ИЗ TELEGRAM:", text, flush=True)
-    
     if not text:
         return
 
