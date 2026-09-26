@@ -1,5 +1,7 @@
 import os
 import re
+import html
+import asyncio
 import urllib.parse
 import urllib.request
 
@@ -7,16 +9,25 @@ from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
 
-# =========================
-# НАСТРОЙКИ
-# =========================
+# ============================================================
+# НАСТРОЙКИ RAILWAY
+# ============================================================
 
 api_id = int(os.getenv("TELEGRAM_API_ID"))
 api_hash = os.getenv("TELEGRAM_API_HASH")
 session = os.getenv("TELEGRAM_SESSION", "").strip()
 
-bot_token = os.getenv("BOT_TOKEN")
-bot_chat_id = os.getenv("BOT_CHAT_ID")
+bot_token = os.getenv("BOT_TOKEN", "").strip()
+bot_chat_id = os.getenv("BOT_CHAT_ID", "").strip()
+
+if not session:
+    raise RuntimeError("TELEGRAM_SESSION пустая")
+
+if not bot_token:
+    raise RuntimeError("BOT_TOKEN пустой")
+
+if not bot_chat_id:
+    raise RuntimeError("BOT_CHAT_ID пустой")
 
 
 client = TelegramClient(
@@ -26,35 +37,18 @@ client = TelegramClient(
 )
 
 
-# =========================
+# ============================================================
 # ГЕОГРАФИЯ
-# =========================
+# ============================================================
 
 locations = [
-    "люберцы",
-    "люберцах",
-    "люберец",
-    "лыткарино",
-    "жуковский",
-    "жуковском",
-
-    "котельники",
-    "дзержинский",
-    "дзержинском",
-    "томилино",
-    "красково",
-    "малаховка",
-    "октябрьский",
-    "быково",
-    "раменское",
-    "раменском",
-# ЮВАО Москвы
+    # Москва
+    "москва",
     "ювао",
     "юго-восточный административный округ",
     "лефортово",
     "нижегородский",
     "рязанский",
-    "текстильщики",
     "кузьминки",
     "выхино",
     "жулебино",
@@ -64,45 +58,62 @@ locations = [
     "южнопортовый",
     "капотня",
     "некрасовка",
-# Московская область и ближайшая зона
-    "котельник",
-    "дзержинск",
-    "островц",
-    "бронниц",
-    "софьин",
-    "лыткарин",
-    "томилин",
-    "красков",
-    "некрасовк",
-    "марусин",
-    
+
+    # Московская область
+    "люберцы",
+    "люберцах",
+    "люберец",
+    "котельники",
+    "дзержинский",
+    "лыткарино",
+    "красково",
+    "малаховка",
+    "томилино",
+    "октябрьский",
+    "быково",
+    "раменское",
+    "раменский",
+    "жуковский",
+    "островцы",
+    "софьино",
+    "бронницы",
+    "марусино",
 ]
 
 
-# =========================
-# СПЕЦТЕХНИКА
-# =========================
+# ============================================================
+# СПЕЦТЕХНИКА И РАБОТЫ
+# ============================================================
 
 equipment_words = [
-# Спецтехника
-    "экскаватор",
+    # Экскаваторы / погрузчики
     "экскаватор-погрузчик",
     "экскаватор погрузчик",
+    "экскаватор",
     "погрузчик",
     "мини-погрузчик",
     "мини погрузчик",
+    "минипогрузчик",
+
+    # Самосвалы
+    "самосвал",
+    "самосвалы",
+
+    # Другая техника
     "бобкэт",
     "bobcat",
+    "jcb",
+    "джсб",
     "каток",
     "виброкаток",
     "бульдозер",
     "манипулятор",
-    "самосвал",
     "автокран",
     "кран",
     "трактор",
     "грейдер",
-# Работы
+
+    # Работы
     "копать",
     "копка",
     "котлован",
@@ -113,25 +124,26 @@ equipment_words = [
     "земляные работы",
     "дорожные работы",
     "асфальтирование",
+
+    # Снег
     "вывоз снега",
     "уборка снега",
     "убрать снег",
-    "убрать снега",
     "расчистка снега",
     "расчистить снег",
     "очистка снега",
-    "очистить снег",
     "погрузка снега",
-    "погрузить снег",
-    "вывезти снег",
-    "вывезем снег",
+    "загрузить снег",
     "снег вывоз",
     "уборка территории от снега",
     "очистка территории от снега",
-    
-   
 ]
-# Материалы
+
+
+# ============================================================
+# МАТЕРИАЛЫ
+# ============================================================
+
 material_words = [
     "песок",
     "песка",
@@ -145,19 +157,21 @@ material_words = [
     "опгс",
     "асфальтная крошка",
     "асфальтовая крошка",
+    "асфальтный скол",
     "бой бетона",
     "бетонный бой",
 ]
 
 
-# Слова, которые обычно показывают, что технику ИЩУТ
+# ============================================================
+# СЛОВА, ПОКАЗЫВАЮЩИЕ ЧТО ЧЕЛОВЕК ИЩЕТ
+# ============================================================
+
 request_words = [
     "нужен",
     "нужна",
     "нужно",
     "нужны",
-    "требуется",
-    "требуются",
     "ищу",
     "ищем",
     "кто может",
@@ -171,55 +185,67 @@ request_words = [
     "арендовать",
     "аренда",
     "нужна техника",
-    "нужна спецтехника",
     "нужен материал",
     "нужны материалы",
     "нужна доставка",
     "кто привезет",
     "кто привезёт",
-    "куплю",
+    "кто привезти",
     "купим",
     "закупаем",
+    "требуется техника",
+    "требуется самосвал",
+    "требуется экскаватор",
+    "требуется погрузчик",
 ]
-# Отсекаем рекламу и предложения услуг
+
+
+# ============================================================
+# РЕКЛАМА / ВАКАНСИИ / ПРЕДЛОЖЕНИЯ
+# ============================================================
+
 ad_exclude_words = [
     "помощь диспетчера",
     "по размещению рекламы",
     "размещение рекламы",
     "услуги спецтехники",
+    "предлагаемая спецтехника",
     "предлагаем спецтехнику",
     "сдам в аренду",
     "сдаю в аренду",
-    "сдаем в аренду",
+    "сдать в аренду",
     "наша техника",
     "наш автопарк",
-    "в наличии техника",
-    "вакансия",
-    "ищу работу",
-    "ищет работу",
-    "требуется машинист",
-    "требуется водитель",
-    "резюме",
-    "свободна техника",
+    "техника в наличии",
+    "свободная техника",
     "свободен экскаватор",
     "свободен погрузчик",
     "есть свободная техника",
-    "готовы выехать",
     "работаем по москве",
-    "работаем по области",
-    "предоставим технику",
+    "работаем в области",
+    "предоставление техники",
     "предоставляем технику",
     "оказываем услуги",
     "аренда спецтехники",
     "сдам спецтехнику",
     "сдается техника",
-    "сдаётся техника",   
-    "требуется рабочий",
+    "сдаётся техника",
+
+    # вакансии
+    "вакансия",
+    "ищу работу",
+    "ищет работу",
+    "машинист ищет работу",
+    "водитель ищет работу",
+    "резюме",
+    "требуется машинист",
+    "требуется водитель",
     "требуются рабочие",
+    "требуется рабочий",
     "требуются сотрудники",
     "требуется сотрудник",
-    "ищем рабочих",
-    "ищем сотрудников",
+    "ищется рабочий",
+    "ищем сотрудника",
     "набор рабочих",
     "набор сотрудников",
     "гражданство:",
@@ -228,116 +254,74 @@ ad_exclude_words = [
     "фото паспорта",
 ]
 
-def calculate_score(text, equipment_found, location_found):
-    score = 1
 
-    if any(word in text for word in [
-        "срочно",
-        "сегодня",
-        "прямо сейчас",
-        "в течение часа"
-    ]):
-        score += 3
+# ============================================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ============================================================
 
-    elif any(word in text for word in [
-        "завтра",
-        "на завтра",
-        "утром"
-    ]):
-        score += 2
+def contains_word(text, word):
+    """
+    Для одиночных слов используем границы слова.
+    Это предотвращает, например:
+    'грунт' -> 'грунтовка'.
+    """
+    text = text.lower()
+    word = word.lower()
 
-    if any(word in text for word in [
-        "экскаватор-погрузчик",
-        "экскаватор погрузчик",
-        "jcb",
-        "джсб"
-    ]):
-        score += 3
+    if " " in word or "-" in word:
+        return word in text
 
-    elif "каток" in text:
-        score += 3
-
-    elif any(word in text for word in [
-        "мини-погрузчик",
-        "мини погрузчик",
-        "минипогрузчик",
-        "bobcat",
-        "бобкат"
-    ]):
-        score += 2
-
-    if any(word in text for word in [
-        "асфальтная крошка",
-        "асфальтовая крошка",
-        "асфальтный скол",
-        "бой бетона",
-        "бой бетонный",
-        "щебень",
-        "песок"
-    ]):
-        score += 2
-
-    if any(city in text for city in [
-        "люберцы",
-        "люберцах",
-        "лыткарино"
-    ]):
-        score += 1
-
-    
-    return min(score, 10)
-    
+    pattern = r"(?<!\w)" + re.escape(word) + r"(?!\w)"
+    return re.search(pattern, text, flags=re.IGNORECASE) is not None
 
 
-# Явный мусор / объявления
-exclude_words = [
-    "продам",
-    "продаю",
-    "продается",
-    "продаётся",
-    "вакансия",
-    "ищу работу",
-    "ищет работу",
-    "машинист ищет работу",
-    "водитель ищет работу",
-    "резюме",
-]
+def find_matches(text, words):
+    found = []
+
+    for word in words:
+        if contains_word(text, word):
+            found.append(word)
+
+    return found
 
 
-# =========================
-# ПОИСК ТЕЛЕФОНА
-# =========================
+def find_location(text):
+    text_lower = text.lower()
 
-phone_pattern = re.compile(
-    r"""
-    (?:
-        (?:\+7|8)
-        [\s\-\(\)]*
-        \d{3}
-        [\s\-\(\)]*
-        \d{3}
-        [\s\-]*
-        \d{2}
-        [\s\-]*
-        \d{2}
-    )
-    """,
-    re.VERBOSE
-)
+    found = []
+    for place in locations:
+        if place in text_lower:
+            found.append(place)
+
+    return found
 
 
 def find_phone(text):
+    phone_pattern = re.compile(
+        r"""
+        (?:
+            (?:\+7|8)
+            [\s\-\(\)]*
+            \d{3}
+            [\s\-\(\)]*
+            \d{3}
+            [\s\-]*
+            \d{2}
+            [\s\-]*
+            \d{2}
+        )
+        """,
+        re.VERBOSE
+    )
+
     match = phone_pattern.search(text)
 
     if not match:
         return None
 
     phone = match.group(0)
-
-    # Оставляем только цифры
     digits = re.sub(r"\D", "", phone)
 
-    # 8XXXXXXXXXX -> 7XXXXXXXXXX
     if len(digits) == 11 and digits.startswith("8"):
         digits = "7" + digits[1:]
 
@@ -347,9 +331,80 @@ def find_phone(text):
     return "+" + digits
 
 
-# =========================
-# ОТПРАВКА В БОТА
-# =========================
+def calculate_score(text, equipment_found, location_found):
+    score = 1
+
+    urgent_words = [
+        "срочно",
+        "сегодня",
+        "прямо сейчас",
+        "в течение часов",
+        "на сейчас",
+    ]
+
+    tomorrow_words = [
+        "завтра",
+        "на завтра",
+        "утром",
+    ]
+
+    if any(word in text for word in urgent_words):
+        score += 3
+
+    elif any(word in text for word in tomorrow_words):
+        score += 2
+
+    if any(
+        word in text
+        for word in [
+            "экскаватор-погрузчик",
+            "экскаватор погрузчик",
+            "jcb",
+            "джсб",
+        ]
+    ):
+        score += 3
+
+    elif any(
+        word in text
+        for word in [
+            "мини-погрузчик",
+            "мини погрузчик",
+            "минипогрузчик",
+            "бобкэт",
+            "bobcat",
+            "каток",
+            "самосвал",
+        ]
+    ):
+        score += 2
+
+    if any(
+        word in text
+        for word in [
+            "асфальтная крошка",
+            "асфальтовая крошка",
+            "асфальтный скол",
+            "бой бетона",
+            "бетонный бой",
+            "щебень",
+            "песок",
+        ]
+    ):
+        score += 2
+
+    if location_found:
+        score += 1
+
+    if equipment_found:
+        score += 1
+
+    return min(score, 10)
+
+
+# ============================================================
+# ОТПРАВКА В TELEGRAM-БОТА
+# ============================================================
 
 def send_to_bot(message):
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -357,182 +412,374 @@ def send_to_bot(message):
     data = urllib.parse.urlencode({
         "chat_id": bot_chat_id,
         "text": message,
-        "disable_web_page_preview": True,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": "true",
     }).encode("utf-8")
 
     request = urllib.request.Request(url, data=data)
 
-    with urllib.request.urlopen(request, timeout=15) as response:
-        return response.read()
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            result = response.read().decode("utf-8")
+
+        print("✅ УВЕДОМЛЕНИЕ ОТПРАВЛЕНО В БОТА", flush=True)
+        return result
+
+    except Exception as e:
+        print(
+            f"❌ ОШИБКА ОТПРАВКИ В БОТА: {repr(e)}",
+            flush=True
+        )
+        return None
 
 
-# =========================
+# ============================================================
 # МОНИТОРИНГ TELEGRAM
-# =========================
+# ============================================================
 
-seen_phones = set()
 seen_leads = set()
+
 
 @client.on(events.NewMessage)
 async def handler(event):
-    print("ПОЛУЧЕНО ИЗ TELEGRAM:", text, flush=True)
-    if not text:
+
+    # --------------------------------------------------------
+    # ВАЖНО: диагностический вывод ДО ВСЕХ фильтров
+    # --------------------------------------------------------
+
+    text = event.raw_text or ""
+
+    try:
+        chat = await event.get_chat()
+        chat_name = (
+            getattr(chat, "title", None)
+            or getattr(chat, "username", None)
+            or str(event.chat_id)
+        )
+    except Exception:
+        chat = None
+        chat_name = str(event.chat_id)
+
+    print("", flush=True)
+    print("=" * 70, flush=True)
+    print("📩 ПОЛУЧЕНО НОВОЕ СООБЩЕНИЕ TELEGRAM", flush=True)
+    print(f"ГРУППА: {chat_name}", flush=True)
+    print(f"CHAT_ID: {event.chat_id}", flush=True)
+    print(f"ТЕКСТ: {text[:1000]}", flush=True)
+    print("=" * 70, flush=True)
+
+    if not text.strip():
+        print("REJECT: пустое сообщение", flush=True)
         return
 
-    text_lower = text.lower()
-    sender_check = await event.get_sender()
+    text_lower = text.lower().strip()
 
-    if getattr(sender_check, "username", None) == "spec_clients_bot":
-        print("REJECT: own notification bot", flush=True)
+    # --------------------------------------------------------
+    # Получаем отправителя
+    # --------------------------------------------------------
+
+    try:
+        sender = await event.get_sender()
+    except Exception:
+        sender = None
+
+    sender_username = getattr(sender, "username", None)
+    sender_first_name = getattr(sender, "first_name", None)
+    sender_last_name = getattr(sender, "last_name", None)
+
+    sender_name = " ".join(
+        part
+        for part in [sender_first_name, sender_last_name]
+        if part
+    ).strip()
+
+    # --------------------------------------------------------
+    # Игнорируем собственного бота
+    # --------------------------------------------------------
+
+    if sender_username and sender_username.lower() == "spec_clients_bot":
+        print(
+            "REJECT: сообщение собственного бота",
+            flush=True
+        )
         return
 
-    # 1. Отсекаем рекламу и вакансии
-    if any(word in text_lower for word in exclude_words + ad_exclude_words):
-        print("REJECT: advertising", flush=True)
+    # --------------------------------------------------------
+    # Отсеиваем вакансии и рекламу
+    # --------------------------------------------------------
+
+    found_ad_words = find_matches(
+        text_lower,
+        ad_exclude_words
+    )
+
+    if found_ad_words:
+        print(
+            "REJECT: реклама/вакансия:",
+            found_ad_words,
+            flush=True
+        )
         return
 
+    # --------------------------------------------------------
+    # Ищем технику / работы / материалы
+    # --------------------------------------------------------
 
-    # 2. В сообщении обязательно должна быть спецтехника
-    equipment_found = [
-        word for word in equipment_words
-        if word in text_lower
-    ]
-    if "экскаватор-погрузчик" in equipment_found:
-        equipment_found = ["экскаватор-погрузчик"]
-    elif "экскаватор погрузчик" in equipment_found:
-        equipment_found = ["экскаватор погрузчик"]
-    elif "мини-погрузчик" in equipment_found:
-        equipment_found = ["мини-погрузчик"]
-    elif "мини погрузчик" in equipment_found:
-        equipment_found = ["мини погрузчик"]
-    
-    material_found = [
-        word for word in material_words
-        if re.search(r'(?<!\w)' + re.escape(word) + r'(?!\w)', text_lower)
-    ]
-    
+    equipment_found = find_matches(
+        text_lower,
+        equipment_words
+    )
+
+    material_found = find_matches(
+        text_lower,
+        material_words
+    )
 
     if not equipment_found and not material_found:
-        print("REJECT: equipment/material", flush=True)
+        print(
+            "REJECT: нет нашей техники/работ/материалов",
+            flush=True
+        )
         return
 
+    # --------------------------------------------------------
+    # Проверяем намерение заказать
+    # --------------------------------------------------------
 
-    # 3. Должен быть признак заявки
-    request_found = [
-        word for word in request_words
-        if word in text_lower
-    ]
+    request_found = find_matches(
+        text_lower,
+        request_words
+    )
 
     if not request_found:
-        print("REJECT: request", flush=True)
+        print(
+            "REJECT: нет признака запроса клиента",
+            flush=True
+        )
         return
-    
 
+    # --------------------------------------------------------
+    # География
+    # --------------------------------------------------------
 
-    # 4. Обязательно наша география
-    location_found = [
-        location for location in locations
-        if location in text_lower
-    ]
+    location_found = find_location(text_lower)
 
     if not location_found:
-        print("REJECT: location", flush=True)
+        print(
+            "REJECT: не найден наш район",
+            flush=True
+        )
         return
+
+    # --------------------------------------------------------
+    # Телефон
+    # --------------------------------------------------------
+
+    phone = find_phone(text)
+
+    # --------------------------------------------------------
+    # Защита от повторов
+    # --------------------------------------------------------
+
+    lead_key = (
+        event.chat_id,
+        event.id
+    )
+
+    if lead_key in seen_leads:
+        print(
+            "REJECT: сообщение уже обработано",
+            flush=True
+        )
+        return
+
+    seen_leads.add(lead_key)
+
+    # --------------------------------------------------------
+    # Оценка
+    # --------------------------------------------------------
+
     score = calculate_score(
         text_lower,
         equipment_found,
         location_found
     )
 
-    # 5. ОБЯЗАТЕЛЬНО телефон
-    phone = find_phone(text)
+    if score >= 7:
+        temperature = "🔥 ГОРЯЧАЯ ЗАЯВКА"
+    elif score >= 4:
+        temperature = "🟠 ХОРОШАЯ ЗАЯВКА"
+    else:
+        temperature = "🟡 НОВАЯ ЗАЯВКА"
 
-    if not phone:
-        return
-    lead_key = (phone, " ".join(text_lower.split()))
+    # --------------------------------------------------------
+    # Ссылка на сообщение
+    # --------------------------------------------------------
 
-    if lead_key in seen_leads:
-        print("REJECT: duplicate", flush=True)
-        return
+    message_link = None
 
-    seen_leads.add(lead_key)
+    chat_username = getattr(
+        chat,
+        "username",
+        None
+    ) if chat else None
 
-    try:
-
-        chat = await event.get_chat()
-        sender = await event.get_sender()
-
-        chat_name = getattr(chat, "title", None) or "Личный чат"
-
-        username = getattr(sender, "username", None)
-
-        sender_name = (
-            f"@{username}"
-            if username
-            else getattr(sender, "first_name", None) or "Не указан"
+    if chat_username:
+        message_link = (
+            f"https://t.me/{chat_username}/{event.id}"
         )
 
+    # --------------------------------------------------------
+    # Контакт отправителя
+    # --------------------------------------------------------
 
-        # Ссылка на оригинальное сообщение
-        message_link = ""
+    sender_contact = ""
 
-        chat_username = getattr(chat, "username", None)
+    if sender_username:
+        sender_contact = (
+            f"\n👤 Telegram: @{html.escape(sender_username)}"
+        )
 
-        if chat_username:
-            message_link = (
-                f"\n\n🔗 Открыть заявку:\n"
-                f"https://t.me/{chat_username}/{event.message.id}"
+    elif sender_name:
+        sender_contact = (
+            f"\n👤 Отправитель: {html.escape(sender_name)}"
+        )
+
+    # --------------------------------------------------------
+    # Формируем сообщение
+    # --------------------------------------------------------
+
+    categories = equipment_found + material_found
+
+    categories_text = ", ".join(
+        dict.fromkeys(categories)
+    )
+
+    location_text = ", ".join(
+        dict.fromkeys(location_found)
+    )
+
+    phone_text = (
+        html.escape(phone)
+        if phone
+        else "в сообщении не указан"
+    )
+
+    safe_text = html.escape(text[:2500])
+    safe_chat = html.escape(str(chat_name))
+
+    notification = (
+        f"{temperature}\n\n"
+        f"⭐ Оценка: <b>{score}/10</b>\n"
+        f"📍 Район: <b>{html.escape(location_text)}</b>\n"
+        f"🚜 Найдено: <b>{html.escape(categories_text)}</b>\n"
+        f"📞 Телефон: <b>{phone_text}</b>\n"
+        f"💬 Группа: <b>{safe_chat}</b>"
+        f"{sender_contact}\n\n"
+        f"📝 <b>Сообщение:</b>\n"
+        f"{safe_text}"
+    )
+
+    if message_link:
+        notification += (
+            f'\n\n🔗 <a href="{message_link}">'
+            f"Открыть сообщение"
+            f"</a>"
+        )
+
+    print(
+        "✅ ПОДХОДЯЩАЯ ЗАЯВКА",
+        flush=True
+    )
+    print(
+        f"Оценка: {score}/10",
+        flush=True
+    )
+
+    send_to_bot(notification)
+
+
+# ============================================================
+# ЗАПУСК
+# ============================================================
+
+async def main():
+    print("", flush=True)
+    print("=" * 70, flush=True)
+    print("🚀 МОНИТОР ЗАЯВОК ЗАПУСКАЕТСЯ", flush=True)
+    print("=" * 70, flush=True)
+
+    await client.start()
+
+    me = await client.get_me()
+
+    print(
+        f"✅ TELEGRAM АВТОРИЗОВАН: "
+        f"{getattr(me, 'first_name', '')} "
+        f"@{getattr(me, 'username', '')}",
+        flush=True
+    )
+
+    # --------------------------------------------------------
+    # Показываем, какие группы реально видит аккаунт
+    # --------------------------------------------------------
+
+    print("", flush=True)
+    print(
+        "📋 ПРОВЕРЯЕМ ДОСТУПНЫЕ TELEGRAM-ДИАЛОГИ...",
+        flush=True
+    )
+
+    group_count = 0
+
+    async for dialog in client.iter_dialogs():
+
+        if dialog.is_group or dialog.is_channel:
+            group_count += 1
+
+            print(
+                f"GROUP {group_count}: "
+                f"{dialog.name} | "
+                f"ID: {dialog.id}",
+                flush=True
             )
 
-        equipment_line = (
-            f"🚜 Техника: {', '.join(equipment_found)}\n"
-            if equipment_found else ""
-)
+    print("", flush=True)
+    print(
+        f"✅ ВСЕГО ВИДНО ГРУПП/КАНАЛОВ: {group_count}",
+        flush=True
+    )
 
-        material_line = (
-            f"🧱 Материал: {', '.join(material_found)}\n"
-            if material_found else ""
-)
-        alert = (
-            f"🔥 ПРИОРИТЕТ: {score}/10\n\n"
-            f"{equipment_line}"
-            f"{material_line}\n"
-            "🔥 ГОРЯЧАЯ ЗАЯВКА\n\n"
+    print(
+        "👂 ЖДУ НОВЫЕ СООБЩЕНИЯ...",
+        flush=True
+    )
+    print("=" * 70, flush=True)
 
-            f"📍 Район: {', '.join(location_found)}\n"
-            
+    # Тестируем отправку в нашего бота
+    send_to_bot(
+        "✅ <b>Монитор спецтехники запущен</b>\n\n"
+        f"Telegram подключён.\n"
+        f"Видно групп/каналов: <b>{group_count}</b>\n"
+        f"Монитор ждёт новые сообщения."
+    )
 
-            f"📞 ТЕЛЕФОН:\n"
-            f"{phone}\n\n"
-
-            f"💬 Заявка:\n"
-            f"{text}\n\n"
-
-            f"👤 Автор: {sender_name}\n"
-            f"📢 Группа: {chat_name}"
-
-            f"{message_link}"
-        )
+    await client.run_until_disconnected()
 
 
-        send_to_bot(alert)
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
 
+    except KeyboardInterrupt:
         print(
-            f"Отправлена заявка: {phone} / {location_found}",
+            "Монитор остановлен пользователем",
             flush=True
         )
 
-
-    except Exception as error:
-
+    except Exception as e:
         print(
-            "Ошибка обработки сообщения:",
-            error,
+            f"❌ КРИТИЧЕСКАЯ ОШИБКА: {repr(e)}",
             flush=True
         )
-
-
-print("Монитор заявок запущен", flush=True)
-
-client.start()
-client.run_until_disconnected()
+        raise
