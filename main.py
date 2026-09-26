@@ -375,9 +375,12 @@ seen_leads = set()
 
 @client.on(events.NewMessage)
 async def handler(event):
-
+    print("=== ПОЛУЧЕНО НОВОЕ СООБЩЕНИЕ ===", flush=True)
+    print("CHAT_ID:", event.chat_id, flush=True)
+    print("TEXT:", (event.raw_text or "")[:500], flush=True)
     text = (event.message.message or "").strip()
     print("ПОЛУЧЕНО ИЗ TELEGRAM:", text, flush=True)
+    
     if not text:
         return
 
