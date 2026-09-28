@@ -4,6 +4,7 @@ import asyncio
 import time
 import hashlib
 import csv
+import json
 from datetime import datetime
 from pathlib import Path
 import urllib.parse
@@ -59,6 +60,46 @@ HOWO_FUEL_L_PER_100KM = float(
     os.getenv("HOWO_FUEL_L_PER_100KM", "40")
 )
 
+# Полная экономика HOWO.
+# Зарплату водителя и лизинг именно этого HOWO нужно задать отдельно.
+HOWO_DRIVER_MONTHLY_RUB = float(
+    os.getenv("HOWO_DRIVER_MONTHLY_RUB", "200000")
+)
+
+HOWO_LEASE_MONTHLY_RUB = float(
+    os.getenv("HOWO_LEASE_MONTHLY_RUB", "60000")
+)
+
+HOWO_WORK_DAYS_MONTH = float(
+    os.getenv("HOWO_WORK_DAYS_MONTH", "26")
+)
+
+HOWO_REPAIR_RESERVE_PCT = float(
+    os.getenv("HOWO_REPAIR_RESERVE_PCT", "10")
+)
+
+HOWO_TIRE_RUB_PER_KM = float(
+    os.getenv("HOWO_TIRE_RUB_PER_KM", "5")
+)
+
+HOWO_OTHER_RUB_PER_TRIP = float(
+    os.getenv("HOWO_OTHER_RUB_PER_TRIP", "0")
+)
+
+# Пороговая оценка рентабельности HOWO.
+# Можно менять через переменные окружения без правки файла.
+HOWO_GOOD_MARGIN_PCT = float(
+    os.getenv("HOWO_GOOD_MARGIN_PCT", "25")
+)
+
+HOWO_BORDER_MARGIN_PCT = float(
+    os.getenv("HOWO_BORDER_MARGIN_PCT", "10")
+)
+
+HOWO_MIN_PROFIT_TRIP_RUB = float(
+    os.getenv("HOWO_MIN_PROFIT_TRIP_RUB", "3000")
+)
+
 LEADS_CSV_HEADERS = [
     "Дата",
     "Категория",
@@ -91,6 +132,19 @@ LEADS_CSV_HEADERS = [
     "Выручка/день",
     "Топливо руб/день",
     "Остаток после топлива/день",
+    "Зарплата водителя/день",
+    "Лизинг HOWO/день",
+    "Ремонтный резерв/рейс",
+    "Резина/рейс",
+    "Прочее/рейс",
+    "Полная себестоимость/рейс",
+    "Прибыль/рейс",
+    "Полная себестоимость/день",
+    "Прибыль/день",
+    "Маржа %",
+    "Оценка HOWO",
+    "Причина оценки HOWO",
+    "ID лида",
     "Ссылка",
     "Текст заявки",
     "Статус",
@@ -101,7 +155,7 @@ LEADS_CSV_HEADERS = [
 # ПРИОРИТЕТНЫЙ СПИСОК TELEGRAM-ИСТОЧНИКОВ
 # ============================================================
 #
-# FILTER v9 обрабатывает ВСЕ группы/каналы, которые видит Telegram-аккаунт.
+# FILTER v11 обрабатывает ВСЕ группы/каналы, которые видит Telegram-аккаунт.
 #
 # Источники ниже — наш дополнительный приоритетный список.
 # Если аккаунт уже состоит в них, сообщения оттуда обрабатываются как обычно.
@@ -785,7 +839,7 @@ def find_phone(text):
 
 
 # ============================================================
-# ДОПОЛНИТЕЛЬНАЯ ЛОГИКА FILTER v9
+# ДОПОЛНИТЕЛЬНАЯ ЛОГИКА FILTER v11
 # ============================================================
 
 BIG_LEAD_WORDS = [
@@ -970,6 +1024,68 @@ def calculate_howo_economy(text):
         if after_fuel_trip is not None:
             after_fuel_day = after_fuel_trip * trips_per_day
 
+    driver_day = (
+        HOWO_DRIVER_MONTHLY_RUB / HOWO_WORK_DAYS_MONTH
+        if HOWO_WORK_DAYS_MONTH > 0
+        else 0
+    )
+
+    lease_day = (
+        HOWO_LEASE_MONTHLY_RUB / HOWO_WORK_DAYS_MONTH
+        if HOWO_WORK_DAYS_MONTH > 0
+        else 0
+    )
+
+    repair_reserve_trip = None
+    tire_cost_trip = None
+    full_cost_trip = None
+    profit_trip = None
+    full_cost_day = None
+    profit_day = None
+    margin_pct = None
+
+    if revenue_trip is not None:
+        repair_reserve_trip = (
+            revenue_trip * HOWO_REPAIR_RESERVE_PCT / 100
+        )
+
+    if shoulder_km is not None:
+        round_trip_km = shoulder_km * 2
+        tire_cost_trip = round_trip_km * HOWO_TIRE_RUB_PER_KM
+
+    if trips_per_day and trips_per_day > 0:
+        driver_per_trip = driver_day / trips_per_day
+        lease_per_trip = lease_day / trips_per_day
+    else:
+        driver_per_trip = 0
+        lease_per_trip = 0
+
+    if (
+        fuel_cost_trip is not None
+        and repair_reserve_trip is not None
+        and tire_cost_trip is not None
+    ):
+        full_cost_trip = (
+            fuel_cost_trip
+            + repair_reserve_trip
+            + tire_cost_trip
+            + HOWO_OTHER_RUB_PER_TRIP
+            + driver_per_trip
+            + lease_per_trip
+        )
+
+        if revenue_trip is not None:
+            profit_trip = revenue_trip - full_cost_trip
+
+            if revenue_trip > 0:
+                margin_pct = profit_trip / revenue_trip * 100
+
+    if trips_per_day and trips_per_day > 0 and full_cost_trip is not None:
+        full_cost_day = full_cost_trip * trips_per_day
+
+        if revenue_day is not None:
+            profit_day = revenue_day - full_cost_day
+
     return {
         **data,
         "revenue_trip": revenue_trip,
@@ -979,6 +1095,16 @@ def calculate_howo_economy(text):
         "revenue_day": revenue_day,
         "fuel_cost_day": fuel_cost_day,
         "after_fuel_day": after_fuel_day,
+        "driver_day": driver_day,
+        "lease_day": lease_day,
+        "repair_reserve_trip": repair_reserve_trip,
+        "tire_cost_trip": tire_cost_trip,
+        "other_cost_trip": HOWO_OTHER_RUB_PER_TRIP,
+        "full_cost_trip": full_cost_trip,
+        "profit_trip": profit_trip,
+        "full_cost_day": full_cost_day,
+        "profit_day": profit_day,
+        "margin_pct": margin_pct,
     }
 
 
@@ -999,6 +1125,101 @@ def format_number(value, suffix=""):
         value_text = f"{value:.1f}"
 
     return value_text + suffix
+
+
+
+def make_short_lead_id(text, phone, chat_name):
+    raw = (
+        (phone or "")
+        + "|"
+        + (chat_name or "")
+        + "|"
+        + normalize_lead_text(text)[:500]
+    )
+
+    return hashlib.sha256(
+        raw.encode("utf-8")
+    ).hexdigest()[:8].upper()
+
+
+def build_auto_reply(category):
+    if category == "🚛 HOWO / САМОСВАЛ":
+        return (
+            "Добрый день. По вашей заявке есть свой самосвал HOWO 20 м³. "
+            "Готовы обсудить маршрут, плечо, материал, ставку, количество рейсов "
+            "и график работы. Напишите адрес погрузки/выгрузки и условия оплаты."
+        )
+
+    if category == "🚜 ТЕХНИКА РЯДОМ":
+        return (
+            "Добрый день. По вашей заявке есть своя техника: "
+            "экскаватор-погрузчик, мини-погрузчик, самосвал HOWO 20 м³ и каток 4 т. "
+            "Подскажите точный адрес, объём работ, дату начала и количество смен."
+        )
+
+    if category in {
+        "🛣 АСФАЛЬТ / БЛАГОУСТРОЙСТВО",
+        "🏗 КРУПНЫЙ ПОДРЯД",
+    }:
+        return (
+            "Добрый день. Готовы рассмотреть ваш объект по асфальтированию, "
+            "благоустройству и земляным работам. Есть своя техника и бригада. "
+            "Пришлите адрес, ВОР/объёмы, сроки, условия по материалам и оплате — "
+            "подготовим расчёт и КП."
+        )
+
+    return (
+        "Добрый день. Увидел вашу заявку. Есть своя техника и бригада. "
+        "Подскажите адрес, объём, сроки и условия оплаты."
+    )
+
+
+
+def assess_howo_profitability(howo):
+    """
+    Оценка только по тем данным, которые удалось извлечь из заявки.
+    Если не хватает плеча/ставки — просим уточнить, а не выдумываем.
+    """
+    profit_trip = howo.get("profit_trip")
+    margin_pct = howo.get("margin_pct")
+
+    if profit_trip is None or margin_pct is None:
+        return {
+            "label": "⚪ НУЖНО УТОЧНИТЬ",
+            "reason": "не хватает ставки, плеча или количества рейсов для полного расчёта",
+        }
+
+    if (
+        margin_pct >= HOWO_GOOD_MARGIN_PCT
+        and profit_trip >= HOWO_MIN_PROFIT_TRIP_RUB
+    ):
+        return {
+            "label": "🟢 ВЫГОДНО",
+            "reason": (
+                f"маржа {margin_pct:.1f}% и прибыль "
+                f"{format_money(profit_trip)} за рейс"
+            ),
+        }
+
+    if (
+        margin_pct >= HOWO_BORDER_MARGIN_PCT
+        and profit_trip > 0
+    ):
+        return {
+            "label": "🟡 НА ГРАНИ",
+            "reason": (
+                f"маржа {margin_pct:.1f}% и прибыль "
+                f"{format_money(profit_trip)} за рейс"
+            ),
+        }
+
+    return {
+        "label": "🔴 НЕВЫГОДНО",
+        "reason": (
+            f"маржа {margin_pct:.1f}% и прибыль "
+            f"{format_money(profit_trip)} за рейс"
+        ),
+    }
 
 
 def ensure_leads_csv():
@@ -1044,6 +1265,8 @@ def append_lead_to_csv(
     text,
     message_link,
     howo,
+    howo_assessment,
+    lead_id,
 ):
     ensure_leads_csv()
 
@@ -1096,6 +1319,19 @@ def append_lead_to_csv(
         "Выручка/день": howo["revenue_day"] or "",
         "Топливо руб/день": howo["fuel_cost_day"] or "",
         "Остаток после топлива/день": howo["after_fuel_day"] or "",
+        "Зарплата водителя/день": howo["driver_day"] or "",
+        "Лизинг HOWO/день": howo["lease_day"] or "",
+        "Ремонтный резерв/рейс": howo["repair_reserve_trip"] or "",
+        "Резина/рейс": howo["tire_cost_trip"] or "",
+        "Прочее/рейс": howo["other_cost_trip"] or "",
+        "Полная себестоимость/рейс": howo["full_cost_trip"] or "",
+        "Прибыль/рейс": howo["profit_trip"] or "",
+        "Полная себестоимость/день": howo["full_cost_day"] or "",
+        "Прибыль/день": howo["profit_day"] or "",
+        "Маржа %": howo["margin_pct"] or "",
+        "Оценка HOWO": howo_assessment["label"],
+        "Причина оценки HOWO": howo_assessment["reason"],
+        "ID лида": lead_id,
         "Ссылка": message_link or "",
         "Текст заявки": text,
         "Статус": "Новый",
@@ -1364,6 +1600,165 @@ def send_to_bot(message):
     return True
 
 
+
+# ============================================================
+# MINI CRM: СТАТУСЫ ЛИДОВ ЧЕРЕЗ КОМАНДЫ БОТУ
+# ============================================================
+
+CRM_STATUS_MAP = {
+    "called": "Позвонил",
+    "wait": "Жду ответ",
+    "calc": "Считаю",
+    "kp": "Отправил КП",
+    "work": "В работе",
+    "refuse": "Отказ",
+}
+
+
+def update_lead_status(lead_id, new_status):
+    path = Path(LEADS_CSV_PATH)
+
+    if not path.exists():
+        return False, "Таблица лидов ещё не создана."
+
+    with path.open(
+        "r",
+        newline="",
+        encoding="utf-8-sig",
+    ) as file:
+        reader = csv.DictReader(
+            file,
+            delimiter=";",
+        )
+        rows = list(reader)
+        fieldnames = reader.fieldnames or LEADS_CSV_HEADERS
+
+    found = False
+
+    for row in rows:
+        if (
+            row.get("ID лида", "")
+            .strip()
+            .upper()
+            == lead_id.strip().upper()
+        ):
+            row["Статус"] = new_status
+            found = True
+            break
+
+    if not found:
+        return False, f"Лид {lead_id} не найден."
+
+    with path.open(
+        "w",
+        newline="",
+        encoding="utf-8-sig",
+    ) as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=fieldnames,
+            delimiter=";",
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+    return True, f"{lead_id}: статус → {new_status}"
+
+
+def get_bot_updates(offset=None):
+    url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
+
+    params = {
+        "timeout": 20,
+        "allowed_updates": '["message"]',
+    }
+
+    if offset is not None:
+        params["offset"] = offset
+
+    full_url = url + "?" + urllib.parse.urlencode(params)
+
+    try:
+        with urllib.request.urlopen(
+            full_url,
+            timeout=30,
+        ) as response:
+            data = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        if not data.get("ok"):
+            return []
+
+        return data.get("result", [])
+
+    except Exception as error:
+        print(
+            "⚠️ CRM getUpdates:",
+            repr(error),
+            flush=True,
+        )
+        return []
+
+
+async def crm_bot_loop():
+    offset = None
+
+    while True:
+        updates = await asyncio.to_thread(
+            get_bot_updates,
+            offset,
+        )
+
+        for update in updates:
+            offset = update["update_id"] + 1
+
+            message = update.get("message") or {}
+            chat = message.get("chat") or {}
+            text = (message.get("text") or "").strip()
+
+            if str(chat.get("id")) != str(bot_chat_id):
+                continue
+
+            if not text.startswith("/status "):
+                continue
+
+            parts = text.split()
+
+            if len(parts) != 3:
+                await asyncio.to_thread(
+                    send_bot_part,
+                    "Формат: /status ID called|wait|calc|kp|work|refuse",
+                )
+                continue
+
+            _, lead_id, status_code = parts
+
+            status_name = CRM_STATUS_MAP.get(
+                status_code.lower()
+            )
+
+            if not status_name:
+                await asyncio.to_thread(
+                    send_bot_part,
+                    "Статусы: called, wait, calc, kp, work, refuse",
+                )
+                continue
+
+            ok, result_text = await asyncio.to_thread(
+                update_lead_status,
+                lead_id,
+                status_name,
+            )
+
+            await asyncio.to_thread(
+                send_bot_part,
+                ("✅ " if ok else "❌ ") + result_text,
+            )
+
+        await asyncio.sleep(2)
+
+
 # ============================================================
 # ОБРАБОТЧИК
 # ============================================================
@@ -1625,6 +2020,20 @@ async def handler(event):
 
         howo = calculate_howo_economy(text)
 
+        howo_assessment = assess_howo_profitability(
+            howo
+        )
+
+        lead_id = make_short_lead_id(
+            text,
+            phone,
+            chat_name,
+        )
+
+        auto_reply = build_auto_reply(
+            category
+        )
+
         # ----------------------------------------------------
         # АВТОР
         # ----------------------------------------------------
@@ -1726,6 +2135,8 @@ async def handler(event):
             f"{('📝 Причины: ' + ', '.join(big_reasons) + chr(10)) if big_reasons else ''}\n"
 
             f"{('🚛 ЭКОНОМИКА HOWO (предварительно):' + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Оценка: ' + howo_assessment['label'] + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Почему: ' + howo_assessment['reason'] + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
             f"{('• Плечо: ' + format_number(howo['shoulder_km'], ' км') + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
             f"{('• Ставка: ' + (format_number(howo['rate_m3'], ' ₽/м³') if howo['rate_m3'] is not None else format_number(howo['rate_trip'], ' ₽/рейс')) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
             f"{('• Кузов: ' + format_number(HOWO_BODY_M3, ' м³') + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
@@ -1734,7 +2145,19 @@ async def handler(event):
             f"{('• Топливо/рейс: ' + format_money(howo['fuel_cost_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
             f"{('• Остаток после топлива/рейс: ' + format_money(howo['after_fuel_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
             f"{('• Остаток после топлива/день: ' + format_money(howo['after_fuel_day']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('⚠️ Это не чистая прибыль: не учтены ремонт, резина, водитель, лизинг, простой и платные дороги.' + chr(10) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Водитель/день: ' + format_money(howo['driver_day']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Лизинг HOWO/день: ' + format_money(howo['lease_day']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Ремонтный резерв/рейс: ' + format_money(howo['repair_reserve_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Резина/рейс: ' + format_money(howo['tire_cost_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Полная себестоимость/рейс: ' + format_money(howo['full_cost_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• ПРИБЫЛЬ/рейс: ' + format_money(howo['profit_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• ПРИБЫЛЬ/день: ' + format_money(howo['profit_day']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Маржа: ' + (str(round(howo['margin_pct'], 1)) + '%' if howo['margin_pct'] is not None else 'не рассчитано') + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('⚠️ Если зарплата водителя или лизинг не заданы, они считаются как 0.' + chr(10) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+
+            f"🆔 ID лида: {lead_id}\n\n"
+            f"✉️ ГОТОВЫЙ ОТВЕТ ЗАКАЗЧИКУ:\n"
+            f"{auto_reply}\n\n"
 
             f"💬 ПОЛНЫЙ ТЕКСТ ЗАЯВКИ:\n"
             f"{text}\n\n"
@@ -1781,6 +2204,8 @@ async def handler(event):
                     text=text,
                     message_link=message_link,
                     howo=howo,
+                    howo_assessment=howo_assessment,
+                    lead_id=lead_id,
                 )
 
                 print(
@@ -1820,7 +2245,7 @@ async def handler(event):
 async def main():
     print("\n" + "=" * 70, flush=True)
     print(
-        "🚀 МОНИТОР ЗАЯВОК ЗАПУСКАЕТСЯ — FILTER v9",
+        "🚀 МОНИТОР ЗАЯВОК ЗАПУСКАЕТСЯ — FILTER v11",
         flush=True,
     )
     print("=" * 70, flush=True)
@@ -1897,7 +2322,7 @@ async def main():
     # ТЕСТ
     # --------------------------------------------------------
     test_message = (
-        "✅ МОНИТОР ЗАЯВОК ЗАПУЩЕН — FILTER v9\n\n"
+        "✅ МОНИТОР ЗАЯВОК ЗАПУЩЕН — FILTER v11\n\n"
 
         f"Всего видно групп/каналов: {group_count}\n"
         f"Из нашей собранной базы видно: {priority_visible}\n\n"
@@ -1949,6 +2374,10 @@ async def main():
             "❌ ТЕСТОВОЕ СООБЩЕНИЕ В БОТА НЕ УШЛО",
             flush=True,
         )
+
+    asyncio.create_task(
+        crm_bot_loop()
+    )
 
     await client.run_until_disconnected()
 
