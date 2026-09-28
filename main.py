@@ -3,6 +3,9 @@ import re
 import asyncio
 import time
 import hashlib
+import csv
+from datetime import datetime
+from pathlib import Path
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -37,10 +40,68 @@ client = TelegramClient(StringSession(session), api_id, api_hash)
 
 
 # ============================================================
+# ТАБЛИЦА ЛИДОВ + ЭКОНОМИКА HOWO
+# ============================================================
+
+LEADS_CSV_PATH = os.getenv("LEADS_CSV_PATH", "leads.csv").strip()
+
+DIESEL_RUB_PER_L = float(
+    os.getenv("DIESEL_RUB_PER_L", "85")
+)
+
+HOWO_BODY_M3 = float(
+    os.getenv("HOWO_BODY_M3", "20")
+)
+
+# Пока это расчетное значение. Если знаешь реальный расход,
+# задай HOWO_FUEL_L_PER_100KM через переменную окружения.
+HOWO_FUEL_L_PER_100KM = float(
+    os.getenv("HOWO_FUEL_L_PER_100KM", "40")
+)
+
+LEADS_CSV_HEADERS = [
+    "Дата",
+    "Категория",
+    "Приоритет",
+    "Балл",
+    "Тип заявки",
+    "География",
+    "Группа",
+    "Username группы",
+    "Телефон",
+    "Telegram контакт",
+    "Техника",
+    "Работы",
+    "Подряд",
+    "Материалы",
+    "Площадь",
+    "Объем",
+    "Цена/ставка",
+    "Плечо км",
+    "Ставка руб/м3",
+    "Ставка руб/рейс",
+    "Рейсов/день",
+    "Кузов HOWO м3",
+    "Расход л/100км",
+    "Дизель руб/л",
+    "Выручка/рейс",
+    "Топливо л/рейс",
+    "Топливо руб/рейс",
+    "Остаток после топлива/рейс",
+    "Выручка/день",
+    "Топливо руб/день",
+    "Остаток после топлива/день",
+    "Ссылка",
+    "Текст заявки",
+    "Статус",
+]
+
+
+# ============================================================
 # ПРИОРИТЕТНЫЙ СПИСОК TELEGRAM-ИСТОЧНИКОВ
 # ============================================================
 #
-# FILTER v8 обрабатывает ВСЕ группы/каналы, которые видит Telegram-аккаунт.
+# FILTER v9 обрабатывает ВСЕ группы/каналы, которые видит Telegram-аккаунт.
 #
 # Источники ниже — наш дополнительный приоритетный список.
 # Если аккаунт уже состоит в них, сообщения оттуда обрабатываются как обычно.
@@ -724,7 +785,7 @@ def find_phone(text):
 
 
 # ============================================================
-# ДОПОЛНИТЕЛЬНАЯ ЛОГИКА FILTER v8
+# ДОПОЛНИТЕЛЬНАЯ ЛОГИКА FILTER v9
 # ============================================================
 
 BIG_LEAD_WORDS = [
@@ -778,6 +839,280 @@ def categorize_lead(text_lower, classification):
     if equipment_found and not work_found:
         return "🚜 ТЕХНИКА РЯДОМ"
     return "📋 ДРУГОЕ ПОДХОДЯЩЕЕ"
+
+
+# ============================================================
+# HOWO: СТАВКА / ПЛЕЧО / РЕЙСЫ / ТАБЛИЦА
+# ============================================================
+
+SHOULDER_PATTERN = re.compile(
+    r"\b(?:плечо|расстояние)\s*[:\-]?\s*(\d+(?:[.,]\d+)?)\s*км\b",
+    re.IGNORECASE,
+)
+
+RATE_M3_PATTERN = re.compile(
+    r"\b(\d[\d\s]*(?:[.,]\d+)?)\s*(?:₽|руб(?:\.|лей)?|р\.?)?\s*/?\s*(?:м3|м³|куб)\b",
+    re.IGNORECASE,
+)
+
+RATE_TRIP_PATTERN = re.compile(
+    r"\b(\d[\d\s]*(?:[.,]\d+)?)\s*(?:₽|руб(?:\.|лей)?|р\.?)?\s*/?\s*(?:рейс|рейса)\b",
+    re.IGNORECASE,
+)
+
+TRIPS_PATTERN = re.compile(
+    r"\b(\d{1,2})(?:\s*[-–]\s*(\d{1,2}))?\s*рейс(?:а|ов)?\b",
+    re.IGNORECASE,
+)
+
+
+def _to_float(value):
+    if value is None:
+        return None
+
+    cleaned = str(value).replace(" ", "").replace(",", ".")
+
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def extract_howo_inputs(text):
+    lower = normalize_text(text)
+
+    shoulder_match = SHOULDER_PATTERN.search(lower)
+    rate_m3_match = RATE_M3_PATTERN.search(lower)
+    rate_trip_match = RATE_TRIP_PATTERN.search(lower)
+    trips_match = TRIPS_PATTERN.search(lower)
+
+    shoulder_km = (
+        _to_float(shoulder_match.group(1))
+        if shoulder_match
+        else None
+    )
+
+    rate_m3 = (
+        _to_float(rate_m3_match.group(1))
+        if rate_m3_match
+        else None
+    )
+
+    rate_trip = (
+        _to_float(rate_trip_match.group(1))
+        if rate_trip_match
+        else None
+    )
+
+    trips_per_day = None
+
+    if trips_match:
+        first = _to_float(trips_match.group(1))
+        second = _to_float(trips_match.group(2))
+
+        if first is not None and second is not None:
+            trips_per_day = (first + second) / 2
+        else:
+            trips_per_day = first
+
+    return {
+        "shoulder_km": shoulder_km,
+        "rate_m3": rate_m3,
+        "rate_trip": rate_trip,
+        "trips_per_day": trips_per_day,
+    }
+
+
+def calculate_howo_economy(text):
+    data = extract_howo_inputs(text)
+
+    shoulder_km = data["shoulder_km"]
+    rate_m3 = data["rate_m3"]
+    rate_trip = data["rate_trip"]
+    trips_per_day = data["trips_per_day"]
+
+    revenue_trip = None
+
+    if rate_m3 is not None:
+        revenue_trip = rate_m3 * HOWO_BODY_M3
+    elif rate_trip is not None:
+        revenue_trip = rate_trip
+
+    fuel_l_trip = None
+    fuel_cost_trip = None
+    after_fuel_trip = None
+
+    if shoulder_km is not None:
+        round_trip_km = shoulder_km * 2
+
+        fuel_l_trip = (
+            round_trip_km
+            * HOWO_FUEL_L_PER_100KM
+            / 100
+        )
+
+        fuel_cost_trip = fuel_l_trip * DIESEL_RUB_PER_L
+
+        if revenue_trip is not None:
+            after_fuel_trip = revenue_trip - fuel_cost_trip
+
+    revenue_day = None
+    fuel_cost_day = None
+    after_fuel_day = None
+
+    if trips_per_day is not None:
+        if revenue_trip is not None:
+            revenue_day = revenue_trip * trips_per_day
+
+        if fuel_cost_trip is not None:
+            fuel_cost_day = fuel_cost_trip * trips_per_day
+
+        if after_fuel_trip is not None:
+            after_fuel_day = after_fuel_trip * trips_per_day
+
+    return {
+        **data,
+        "revenue_trip": revenue_trip,
+        "fuel_l_trip": fuel_l_trip,
+        "fuel_cost_trip": fuel_cost_trip,
+        "after_fuel_trip": after_fuel_trip,
+        "revenue_day": revenue_day,
+        "fuel_cost_day": fuel_cost_day,
+        "after_fuel_day": after_fuel_day,
+    }
+
+
+def format_money(value):
+    if value is None:
+        return "не рассчитано"
+
+    return f"{value:,.0f}".replace(",", " ") + " ₽"
+
+
+def format_number(value, suffix=""):
+    if value is None:
+        return "не указано"
+
+    if float(value).is_integer():
+        value_text = str(int(value))
+    else:
+        value_text = f"{value:.1f}"
+
+    return value_text + suffix
+
+
+def ensure_leads_csv():
+    path = Path(LEADS_CSV_PATH)
+
+    if path.parent != Path("."):
+        path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+    if path.exists() and path.stat().st_size > 0:
+        return
+
+    with path.open(
+        "w",
+        newline="",
+        encoding="utf-8-sig",
+    ) as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=LEADS_CSV_HEADERS,
+            delimiter=";",
+        )
+        writer.writeheader()
+
+
+def append_lead_to_csv(
+    *,
+    category,
+    priority,
+    score,
+    lead_type,
+    geo_line,
+    chat_name,
+    chat_username,
+    phone,
+    tg_contact,
+    equipment_found,
+    work_found,
+    contract_found,
+    material_found,
+    text,
+    message_link,
+    howo,
+):
+    ensure_leads_csv()
+
+    normalized = normalize_text(text)
+
+    area = extract_first_number(
+        AREA_PATTERN,
+        normalized,
+    )
+
+    volume = extract_first_number(
+        VOLUME_PATTERN,
+        normalized,
+    )
+
+    price = extract_first_number(
+        MONEY_PATTERN,
+        normalized,
+    )
+
+    row = {
+        "Дата": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Категория": category,
+        "Приоритет": priority,
+        "Балл": score,
+        "Тип заявки": lead_type,
+        "География": geo_line,
+        "Группа": chat_name,
+        "Username группы": chat_username or "",
+        "Телефон": phone or "",
+        "Telegram контакт": tg_contact or "",
+        "Техника": ", ".join(equipment_found),
+        "Работы": ", ".join(work_found),
+        "Подряд": ", ".join(contract_found),
+        "Материалы": ", ".join(material_found),
+        "Площадь": area or "",
+        "Объем": volume or "",
+        "Цена/ставка": price or "",
+        "Плечо км": howo["shoulder_km"] or "",
+        "Ставка руб/м3": howo["rate_m3"] or "",
+        "Ставка руб/рейс": howo["rate_trip"] or "",
+        "Рейсов/день": howo["trips_per_day"] or "",
+        "Кузов HOWO м3": HOWO_BODY_M3,
+        "Расход л/100км": HOWO_FUEL_L_PER_100KM,
+        "Дизель руб/л": DIESEL_RUB_PER_L,
+        "Выручка/рейс": howo["revenue_trip"] or "",
+        "Топливо л/рейс": howo["fuel_l_trip"] or "",
+        "Топливо руб/рейс": howo["fuel_cost_trip"] or "",
+        "Остаток после топлива/рейс": howo["after_fuel_trip"] or "",
+        "Выручка/день": howo["revenue_day"] or "",
+        "Топливо руб/день": howo["fuel_cost_day"] or "",
+        "Остаток после топлива/день": howo["after_fuel_day"] or "",
+        "Ссылка": message_link or "",
+        "Текст заявки": text,
+        "Статус": "Новый",
+    }
+
+    with Path(LEADS_CSV_PATH).open(
+        "a",
+        newline="",
+        encoding="utf-8-sig",
+    ) as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=LEADS_CSV_HEADERS,
+            delimiter=";",
+        )
+        writer.writerow(row)
+
 
 # ============================================================
 # АНТИДУБЛЬ
@@ -1288,6 +1623,8 @@ async def handler(event):
 
         category = categorize_lead(text_lower, classification)
 
+        howo = calculate_howo_economy(text)
+
         # ----------------------------------------------------
         # АВТОР
         # ----------------------------------------------------
@@ -1388,6 +1725,17 @@ async def handler(event):
             f"🧭 Крупный лид: {'ДА' if big_lead else 'нет'}\n"
             f"{('📝 Причины: ' + ', '.join(big_reasons) + chr(10)) if big_reasons else ''}\n"
 
+            f"{('🚛 ЭКОНОМИКА HOWO (предварительно):' + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Плечо: ' + format_number(howo['shoulder_km'], ' км') + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Ставка: ' + (format_number(howo['rate_m3'], ' ₽/м³') if howo['rate_m3'] is not None else format_number(howo['rate_trip'], ' ₽/рейс')) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Кузов: ' + format_number(HOWO_BODY_M3, ' м³') + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Расход принят: ' + format_number(HOWO_FUEL_L_PER_100KM, ' л/100км') + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Выручка/рейс: ' + format_money(howo['revenue_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Топливо/рейс: ' + format_money(howo['fuel_cost_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Остаток после топлива/рейс: ' + format_money(howo['after_fuel_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('• Остаток после топлива/день: ' + format_money(howo['after_fuel_day']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+            f"{('⚠️ Это не чистая прибыль: не учтены ремонт, резина, водитель, лизинг, простой и платные дороги.' + chr(10) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
+
             f"💬 ПОЛНЫЙ ТЕКСТ ЗАЯВКИ:\n"
             f"{text}\n\n"
 
@@ -1415,6 +1763,38 @@ async def handler(event):
         if sent:
             remember_lead(lead_key)
 
+            try:
+                append_lead_to_csv(
+                    category=category,
+                    priority=priority,
+                    score=score,
+                    lead_type=lead_type,
+                    geo_line=geo_line,
+                    chat_name=chat_name,
+                    chat_username=chat_username,
+                    phone=phone,
+                    tg_contact=tg_contact,
+                    equipment_found=equipment_found,
+                    work_found=work_found,
+                    contract_found=contract_found,
+                    material_found=material_found,
+                    text=text,
+                    message_link=message_link,
+                    howo=howo,
+                )
+
+                print(
+                    f"📊 ЗАЯВКА ЗАПИСАНА В ТАБЛИЦУ: {LEADS_CSV_PATH}",
+                    flush=True,
+                )
+
+            except Exception as table_error:
+                print(
+                    "⚠️ НЕ УДАЛОСЬ ЗАПИСАТЬ В ТАБЛИЦУ:",
+                    repr(table_error),
+                    flush=True,
+                )
+
             print(
                 "✅ ЗАЯВКА УШЛА В TELEGRAM-БОТА",
                 flush=True,
@@ -1440,7 +1820,7 @@ async def handler(event):
 async def main():
     print("\n" + "=" * 70, flush=True)
     print(
-        "🚀 МОНИТОР ЗАЯВОК ЗАПУСКАЕТСЯ — FILTER v8",
+        "🚀 МОНИТОР ЗАЯВОК ЗАПУСКАЕТСЯ — FILTER v9",
         flush=True,
     )
     print("=" * 70, flush=True)
@@ -1517,7 +1897,7 @@ async def main():
     # ТЕСТ
     # --------------------------------------------------------
     test_message = (
-        "✅ МОНИТОР ЗАЯВОК ЗАПУЩЕН — FILTER v8\n\n"
+        "✅ МОНИТОР ЗАЯВОК ЗАПУЩЕН — FILTER v9\n\n"
 
         f"Всего видно групп/каналов: {group_count}\n"
         f"Из нашей собранной базы видно: {priority_visible}\n\n"
