@@ -40,7 +40,7 @@ client = TelegramClient(StringSession(session), api_id, api_hash)
 # ПРИОРИТЕТНЫЙ СПИСОК TELEGRAM-ИСТОЧНИКОВ
 # ============================================================
 #
-# FILTER v7 обрабатывает ВСЕ группы/каналы, которые видит Telegram-аккаунт.
+# FILTER v8 обрабатывает ВСЕ группы/каналы, которые видит Telegram-аккаунт.
 #
 # Источники ниже — наш дополнительный приоритетный список.
 # Если аккаунт уже состоит в них, сообщения оттуда обрабатываются как обычно.
@@ -724,6 +724,62 @@ def find_phone(text):
 
 
 # ============================================================
+# ДОПОЛНИТЕЛЬНАЯ ЛОГИКА FILTER v8
+# ============================================================
+
+BIG_LEAD_WORDS = [
+    "тендер", "запрос кп", "коммерческое предложение", "вор",
+    "ведомость объемов", "ведомость объёмов", "генподряд", "генподрядчик",
+    "субподряд", "субподрядчик", "требуется подрядчик", "ищем подрядчика",
+    "нужен подрядчик", "комплексное благоустройство", "благоустройство под ключ",
+    "строительство дороги", "строительство дорог", "асфальтирование",
+]
+
+AREA_PATTERN = re.compile(r"\b(\d[\d\s]{1,8})\s*(м2|м²|кв\.?\s*м)\b", re.IGNORECASE)
+VOLUME_PATTERN = re.compile(r"\b(\d[\d\s]{1,8})\s*(м3|м³|куб(?:ов|а)?)\b", re.IGNORECASE)
+MONEY_PATTERN = re.compile(r"\b(\d[\d\s]{2,12})\s*(₽|руб\.?|р\.)\b", re.IGNORECASE)
+USERNAME_PATTERN = re.compile(r"(?<!\w)@([A-Za-z0-9_]{5,32})")
+
+def extract_first_number(pattern, text):
+    match = pattern.search(text or "")
+    return match.group(0) if match else None
+
+def extract_telegram_contact(text):
+    match = USERNAME_PATTERN.search(text or "")
+    return "@" + match.group(1) if match else None
+
+def detect_big_lead(text_lower):
+    reasons = []
+    for word in BIG_LEAD_WORDS:
+        if word in text_lower:
+            reasons.append(word)
+    area = extract_first_number(AREA_PATTERN, text_lower)
+    volume = extract_first_number(VOLUME_PATTERN, text_lower)
+    if area:
+        digits = re.sub(r"\D", "", area)
+        if digits and int(digits) >= 1000:
+            reasons.append(f"крупная площадь: {area}")
+    if volume:
+        digits = re.sub(r"\D", "", volume)
+        if digits and int(digits) >= 500:
+            reasons.append(f"крупный объем: {volume}")
+    return bool(reasons), list(dict.fromkeys(reasons))
+
+def categorize_lead(text_lower, classification):
+    equipment_found = classification["equipment_found"]
+    work_found = classification["work_found"]
+    contract_found = classification["contract_found"]
+    if any(x in text_lower for x in ["самосвал", "howo", "хово", "8x4", "8×4", "6x4", "6×4"]):
+        return "🚛 HOWO / САМОСВАЛ"
+    if contract_found or any(x in text_lower for x in ["тендер", "вор", "запрос кп", "генподряд", "субподряд"]):
+        return "🏗 КРУПНЫЙ ПОДРЯД"
+    if any(x in text_lower for x in ["асфальт", "благоустройство", "бордюр", "дорог", "парков"]):
+        return "🛣 АСФАЛЬТ / БЛАГОУСТРОЙСТВО"
+    if equipment_found and not work_found:
+        return "🚜 ТЕХНИКА РЯДОМ"
+    return "📋 ДРУГОЕ ПОДХОДЯЩЕЕ"
+
+# ============================================================
 # АНТИДУБЛЬ
 # ============================================================
 
@@ -1165,25 +1221,39 @@ async def handler(event):
         )
 
         # ----------------------------------------------------
-        # ТЕЛЕФОН — ОБЯЗАТЕЛЕН
+        # КОНТАКТЫ / ДВА ПОТОКА
         # ----------------------------------------------------
         phone = find_phone(text)
+        tg_contact = extract_telegram_contact(text)
+        big_lead, big_reasons = detect_big_lead(text_lower)
 
+        # Обычная заявка: телефон обязателен.
+        # Крупный подряд/тендер/ВОР: без телефона не теряем,
+        # если есть Telegram-контакт или публичный источник.
         if not phone:
-            print(
-                "REJECT: НЕТ ТЕЛЕФОНА",
-                flush=True,
-            )
-            return
+            if not (
+                classification["is_work_lead"]
+                and big_lead
+                and (tg_contact or chat_username)
+            ):
+                print(
+                    "REJECT: НЕТ ТЕЛЕФОНА И НЕТ ПРИЗНАКА КРУПНОГО ПОДРЯДА",
+                    flush=True,
+                )
+                return
 
-        print("Телефон:", phone, flush=True)
+        print("Телефон:", phone or "нет", flush=True)
+        print("Telegram-контакт:", tg_contact or "нет", flush=True)
+        print("Крупный лид:", big_lead, big_reasons, flush=True)
 
         # ----------------------------------------------------
         # АНТИДУБЛЬ
         # ----------------------------------------------------
+        contact_key = phone or tg_contact or f"{chat_username or chat_name}:{event.id}"
+
         duplicate, lead_key = is_duplicate_lead(
             text,
-            phone,
+            contact_key,
         )
 
         if duplicate:
@@ -1204,14 +1274,19 @@ async def handler(event):
             priority_source=priority_source,
         )
 
+        if big_lead and classification["is_work_lead"]:
+            score = min(10, score + 2)
+
         if score >= 8:
-            priority = "🔥🔥🔥 ВЫСОКИЙ ПРИОРИТЕТ"
+            priority = "🔥🔥🔥 СРОЧНО ПОЗВОНИТЬ / ПРОВЕРИТЬ"
         elif score >= 6:
             priority = "🔥🔥 ХОРОШАЯ ЗАЯВКА"
         elif score >= 4:
             priority = "🔥 ПОДХОДИТ"
         else:
-            priority = "🟡 НОВАЯ ЗАЯВКА"
+            priority = "🟡 НУЖНО УТОЧНИТЬ"
+
+        category = categorize_lead(text_lower, classification)
 
         # ----------------------------------------------------
         # АВТОР
@@ -1305,7 +1380,13 @@ async def handler(event):
             f"{material_line}"
 
             f"📍 Район: {geo_line}\n"
-            f"📞 ТЕЛЕФОН: {phone}\n\n"
+            f"📂 Категория: {category}\n"
+            f"📞 ТЕЛЕФОН: {phone or 'нет'}\n"
+            f"💬 Telegram-контакт: {tg_contact or 'нет'}\n"
+            f"📐 Объем/площадь: {extract_first_number(AREA_PATTERN, text_lower) or extract_first_number(VOLUME_PATTERN, text_lower) or 'не указан'}\n"
+            f"💰 Цена/ставка: {extract_first_number(MONEY_PATTERN, text_lower) or 'не указана'}\n"
+            f"🧭 Крупный лид: {'ДА' if big_lead else 'нет'}\n"
+            f"{('📝 Причины: ' + ', '.join(big_reasons) + chr(10)) if big_reasons else ''}\n"
 
             f"💬 ПОЛНЫЙ ТЕКСТ ЗАЯВКИ:\n"
             f"{text}\n\n"
@@ -1359,7 +1440,7 @@ async def handler(event):
 async def main():
     print("\n" + "=" * 70, flush=True)
     print(
-        "🚀 МОНИТОР ЗАЯВОК ЗАПУСКАЕТСЯ — FILTER v7",
+        "🚀 МОНИТОР ЗАЯВОК ЗАПУСКАЕТСЯ — FILTER v8",
         flush=True,
     )
     print("=" * 70, flush=True)
@@ -1436,7 +1517,7 @@ async def main():
     # ТЕСТ
     # --------------------------------------------------------
     test_message = (
-        "✅ МОНИТОР ЗАЯВОК ЗАПУЩЕН — FILTER v7\n\n"
+        "✅ МОНИТОР ЗАЯВОК ЗАПУЩЕН — FILTER v8\n\n"
 
         f"Всего видно групп/каналов: {group_count}\n"
         f"Из нашей собранной базы видно: {priority_visible}\n\n"
@@ -1471,7 +1552,11 @@ async def main():
         "• Дренаж / наружные сети\n"
         "• Подряд / субподряд / ВОР / тендер\n\n"
 
-        "🔁 Дубли: не чаще 1 раза за 24 часа."
+        "🔁 Дубли: не чаще 1 раза за 24 часа.\n\n"
+
+        "📂 Категории: техника рядом / HOWO / асфальт и благоустройство / крупный подряд.\n"
+        "📞 Обычная заявка: телефон обязателен.\n"
+        "🏗 Крупный подряд без телефона: не теряем, если есть Telegram-контакт или публичная ссылка."
     )
 
     if send_to_bot(test_message):
