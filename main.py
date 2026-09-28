@@ -24,122 +24,156 @@ bot_chat_id = os.getenv("BOT_CHAT_ID", "").strip()
 
 if not api_id:
     raise RuntimeError("TELEGRAM_API_ID не указан")
-
 if not api_hash:
     raise RuntimeError("TELEGRAM_API_HASH не указан")
-
 if not session:
     raise RuntimeError("TELEGRAM_SESSION не указана")
-
 if not bot_token:
     raise RuntimeError("BOT_TOKEN не указан")
-
 if not bot_chat_id:
     raise RuntimeError("BOT_CHAT_ID не указан")
 
+client = TelegramClient(StringSession(session), api_id, api_hash)
 
-client = TelegramClient(
-    StringSession(session),
-    api_id,
-    api_hash
-)
+
+# ============================================================
+# ПРИОРИТЕТНЫЙ СПИСОК TELEGRAM-ИСТОЧНИКОВ
+# ============================================================
+#
+# FILTER v7 обрабатывает ВСЕ группы/каналы, которые видит Telegram-аккаунт.
+#
+# Источники ниже — наш дополнительный приоритетный список.
+# Если аккаунт уже состоит в них, сообщения оттуда обрабатываются как обычно.
+# Если аккаунт в них не состоит, Telethon сам читать их не сможет до вступления.
+# Для публичных групп используем username.
+# Для инвайт-групп без username используем название чата.
+# ============================================================
+
+PRIORITY_SOURCE_USERNAMES = {
+    "spetstekhnika_arenda",
+    "spetctechnika_arenda_uslugi",
+    "spetstekhnika_moskva",
+    "arenda_spechtekhniki",
+    "arendaspecteh_stroika",
+    "arenda_spetstekhniki_msk",
+    "spectehnikfree",
+    "spectehnika_msk_pro",
+    "spectehnix",
+    "zakazspecteh",
+    "spectehnika_5",
+    "goryachie_zakazy",
+    "spec_tech_bot",
+    "kotelniki_24",
+    "kotelniki_24chat",
+    "lytkarinoonline",
+    "lytkarino_chat",
+    "vsem_podryad",
+    "vsempodryad",
+    "samosvalinfo",
+    "samosvalam_rabota",
+    "stroiteli_moskva",
+    "samosvval",
+    "stroitelimsk5",
+    "stroitelimsk3",
+    "stroiteli_moscow",
+    "samosval2",
+    "podryadru",
+    "tehzakaz",
+    "stroitelimsk4",
+    "stroycamoskva",
+    "spec_tehnika24",
+    "moskva_spectehnika_arenda",
+    "arenda_spehtekhniki",
+    "spectehnika_1",
+    "spectechnikarent",
+    "stroiteli_msk_1",
+    "gksamolet",
+    "arenda_spetstekhniky",
+    "arenda_spectehniki1",
+    "stroymaterialy_moskva",
+    "myluber",
+    "ramenskoe_tv",
+    "rx_machine",
+    "samosvalrussia",
+    "stroitelimoscow",
+    "samolet2021all",
+    "zhukovskiyonline",
+    "zhukovskiy_ramenskoe",
+    "grad_zhukovskiy",
+    "ugorodok",
+    "vm_volkov",
+}
+
+# Инвайт-группы без стабильного username.
+# Сравниваем по названию, если оно совпадает.
+PRIORITY_SOURCE_TITLES = {
+    "спецтехника и самосвалы + нерудка мо и рф",
+    "спецтехника // аренда",
+    "чат жкх лыткарино",
+}
+
+
+def normalize_source_name(value):
+    return (value or "").strip().lower().replace("ё", "е")
+
+
+def source_is_priority(chat):
+    username = normalize_source_name(getattr(chat, "username", None)).lstrip("@")
+    title = normalize_source_name(getattr(chat, "title", None))
+
+    if username and username in PRIORITY_SOURCE_USERNAMES:
+        return True
+
+    if title and title in {
+        normalize_source_name(x)
+        for x in PRIORITY_SOURCE_TITLES
+    }:
+        return True
+
+    return False
 
 
 # ============================================================
 # ГЕОГРАФИЯ
 # ============================================================
 #
-# Москва:
-# только ЮВАО.
+# 1. ЗАЯВКИ ТОЛЬКО НА СПЕЦТЕХНИКУ / МАТЕРИАЛ:
+#    только ЮВАО + наша ближайшая зона МО.
 #
-# Московская область:
-# только наша ближайшая зона.
+# 2. ЗАЯВКИ НА РАБОТЫ / ПОДРЯДЫ:
+#    вся Москва + вся Московская область.
 #
-# Просто "Москва" НЕ считается подходящей географией.
-#
-# Если адрес явно указан и он чужой -> REJECT.
-#
-# Если адрес вообще не указан -> заявку НЕ теряем.
+# 3. Если адрес не указан:
+#    заявку не теряем.
 # ============================================================
 
-TARGET_GEO_PATTERNS = {
-
-    # --------------------------------------------------------
-    # МОСКВА / ЮВАО
-    # --------------------------------------------------------
-
+LOCAL_GEO_PATTERNS = {
+    # Москва / ЮВАО
     "ЮВАО": [
         r"\bювао\b",
         r"юго[- ]восточн\w*\s+административн\w*\s+округ\w*",
     ],
-
-    "Лефортово": [
-        r"\bлефортов\w*\b",
-    ],
-
-    "Нижегородский": [
-        r"\bнижегородск\w*\b",
-    ],
-
+    "Лефортово": [r"\bлефортов\w*\b"],
+    "Нижегородский": [r"\bнижегородск\w*\b"],
     "Рязанский": [
         r"\bрязанск\w*\s+проспект\w*\b",
         r"\bрязанск\w*\s+район\w*\b",
         r"\bм\.?\s*рязанский\s+проспект\b",
     ],
+    "Текстильщики": [r"\bтекстильщик\w*\b"],
+    "Кузьминки": [r"\bкузьминк\w*\b"],
+    "Выхино": [r"\bвыхин\w*\b"],
+    "Жулебино": [r"\bжулебин\w*\b"],
+    "Люблино": [r"\bлюблин\w*\b"],
+    "Марьино": [r"\bмарьин\w*\b"],
+    "Печатники": [r"\bпечатник\w*\b"],
+    "Южнопортовый": [r"\bюжнопортов\w*\b"],
+    "Капотня": [r"\bкапотн\w*\b"],
+    "Некрасовка": [r"\bнекрасовк\w*\b"],
 
-    "Текстильщики": [
-        r"\bтекстильщик\w*\b",
-    ],
-
-    "Кузьминки": [
-        r"\bкузьминк\w*\b",
-    ],
-
-    "Выхино": [
-        r"\bвыхин\w*\b",
-    ],
-
-    "Жулебино": [
-        r"\bжулебин\w*\b",
-    ],
-
-    "Люблино": [
-        r"\bлюблин\w*\b",
-    ],
-
-    "Марьино": [
-        r"\bмарьин\w*\b",
-    ],
-
-    "Печатники": [
-        r"\bпечатник\w*\b",
-    ],
-
-    "Южнопортовый": [
-        r"\bюжнопортов\w*\b",
-    ],
-
-    "Капотня": [
-        r"\bкапотн\w*\b",
-    ],
-
-    "Некрасовка": [
-        r"\bнекрасовк\w*\b",
-    ],
-
-
-    # --------------------------------------------------------
-    # МОСКОВСКАЯ ОБЛАСТЬ
-    # --------------------------------------------------------
-
-    "Люберцы": [
-        r"\bлюберц\w*\b",
-    ],
-
-    "Котельники": [
-        r"\bкотельник\w*\b",
-    ],
-
+    # МО / наша зона
+    "Люберцы": [r"\bлюберц\w*\b"],
+    "Котельники": [r"\bкотельник\w*\b"],
     "Дзержинский": [
         r"\bг\.?\s*дзержинск\w*\b",
         r"\bгород\w*\s+дзержинск\w*\b",
@@ -147,52 +181,20 @@ TARGET_GEO_PATTERNS = {
         r"\bгородск\w*\s+округ\w*\s+дзержинск\w*\b",
         r"\bдзержинский,\s*московск\w*\s+област\w*\b",
     ],
-
-    "Островцы": [
-        r"\bостровц\w*\b",
-    ],
-
-    "Бронницы": [
-        r"\bбронниц\w*\b",
-    ],
-
-    "Софьино": [
-        r"\bсофьин\w*\b",
-    ],
-
-    "Лыткарино": [
-        r"\bлыткарин\w*\b",
-    ],
-
-    "Томилино": [
-        r"\bтомилин\w*\b",
-    ],
-
-    "Красково": [
-        r"\bкрасков\w*\b",
-    ],
-
-    "Марусино": [
-        r"\bмарусин\w*\b",
-    ],
-
-    "Малаховка": [
-        r"\bмалаховк\w*\b",
-    ],
-
+    "Островцы": [r"\bостровц\w*\b"],
+    "Бронницы": [r"\bбронниц\w*\b"],
+    "Софьино": [r"\bсофьин\w*\b"],
+    "Лыткарино": [r"\bлыткарин\w*\b"],
+    "Томилино": [r"\bтомилин\w*\b"],
+    "Красково": [r"\bкрасков\w*\b"],
+    "Марусино": [r"\bмарусин\w*\b"],
+    "Малаховка": [r"\bмалаховк\w*\b"],
     "Октябрьский МО": [
         r"\bоктябрьск\w*\b.{0,40}\bлюбер",
         r"\bлюбер.{0,40}\bоктябрьск\w*\b",
     ],
-
-    "Быково": [
-        r"\bбыков\w*\b",
-    ],
-
-    "Раменское": [
-        r"\bраменск\w*\b",
-    ],
-
+    "Быково": [r"\bбыков\w*\b"],
+    "Раменское": [r"\bраменск\w*\b"],
     "Жуковский": [
         r"\bг\.?\s*жуковск\w*\b",
         r"\bгород\w*\s+жуковск\w*\b",
@@ -202,311 +204,280 @@ TARGET_GEO_PATTERNS = {
     ],
 }
 
+MOSCOW_MO_PATTERNS = [
+    r"\bмосква\b",
+    r"\bмск\b",
+    r"\bмосковск\w*\s+област\w*\b",
+    r"\bподмосков\w*\b",
+
+    r"\bбалаших\w*\b",
+    r"\бреутов\w*\b",
+    r"\bмытищ\w*\b",
+    r"\bкоролев\w*\b",
+    r"\bкоролёв\w*\b",
+    r"\bкрасногорск\w*\b",
+    r"\bхимк\w*\b",
+    r"\bодинцов\w*\b",
+    r"\bподольск\w*\b",
+    r"\bдомодедов\w*\b",
+    r"\bвидно\w*\b",
+    r"\bногинск\w*\b",
+    r"\bбогородск\w*\b",
+    r"\bэлектростал\w*\b",
+    r"\bпушкино\w*\b",
+    r"\bщелков\w*\b",
+    r"\bщёлков\w*\b",
+    r"\bдолгопрудн\w*\b",
+    r"\bлобн\w*\b",
+    r"\bсолнечногорск\w*\b",
+    r"\bистр\w*\b",
+    r"\bчехов\w*\b",
+    r"\bсерпухов\w*\b",
+    r"\bступин\w*\b",
+    r"\bколомн\w*\b",
+    r"\bвоскресенск\w*\b",
+    r"\bшатур\w*\b",
+    r"\bегорьевск\w*\b",
+    r"\bорехово[- ]зуев\w*\b",
+    r"\bпавловск\w*\s+посад\w*\b",
+    r"\bфрязин\w*\b",
+    r"\bжелезнодорожн\w*\b",
+
+    r"\bлюберц\w*\b",
+    r"\bкотельник\w*\b",
+    r"\bдзержинск\w*\b",
+    r"\bлыткарин\w*\b",
+    r"\bжуковск\w*\b",
+    r"\bраменск\w*\b",
+    r"\bбронниц\w*\b",
+]
 
 EXPLICIT_GEO_PATTERNS = [
-
     r"\bмосква\b",
-
     r"\bмосковск\w*\s+област\w*\b",
-
     r"\bг\.?\s*[а-яё-]{3,}",
-
     r"\bгород\w*\s+[а-яё-]{3,}",
-
     r"\bобласт\w*\b",
-
     r"\bрайон\w*\b",
-
     r"\bр-н\b",
-
     r"\bметро\s+[а-яё-]{3,}",
-
     r"\bм\.?\s+[а-яё-]{4,}",
-
     r"\bул\.?\s+[а-яё-]{3,}",
-
     r"\bулиц\w*\s+[а-яё-]{3,}",
-
     r"\bпроспект\w*\b",
-
     r"\bпр-т\b",
-
     r"\bшоссе\b",
-
     r"\bпос\.?\s*[а-яё-]{3,}",
-
     r"\bпос[её]лок\w*\s+[а-яё-]{3,}",
-
     r"\bдеревн\w*\s+[а-яё-]{3,}",
 ]
 
 
-def analyze_geo(text):
+def normalize_text(text):
+    return (text or "").lower().replace("ё", "е")
 
-    lower = (
-        text
-        or ""
-    ).lower()
 
-    lower = lower.replace(
-        "ё",
-        "е"
-    )
-
+def find_pattern_labels(text, mapping):
+    lower = normalize_text(text)
     found = []
 
-    for label, patterns in TARGET_GEO_PATTERNS.items():
-
+    for label, patterns in mapping.items():
         for pattern in patterns:
-
-            if re.search(
-                pattern,
-                lower,
-                flags=re.IGNORECASE | re.DOTALL
-            ):
-
+            if re.search(pattern, lower, flags=re.IGNORECASE | re.DOTALL):
                 found.append(label)
-
                 break
 
-    found = list(
-        dict.fromkeys(found)
-    )
+    return list(dict.fromkeys(found))
 
-    if found:
 
-        return (
-            "allowed",
-            found
-        )
-
-    for pattern in EXPLICIT_GEO_PATTERNS:
-
-        if re.search(
-            pattern,
-            lower,
-            flags=re.IGNORECASE
-        ):
-
-            return (
-                "outside",
-                []
-            )
-
-    return (
-        "unknown",
-        []
+def has_any_pattern(text, patterns):
+    lower = normalize_text(text)
+    return any(
+        re.search(pattern, lower, flags=re.IGNORECASE | re.DOTALL)
+        for pattern in patterns
     )
 
 
+def analyze_geo_for_equipment(text):
+    local_found = find_pattern_labels(text, LOCAL_GEO_PATTERNS)
+
+    if local_found:
+        return "allowed", local_found
+
+    if has_any_pattern(text, EXPLICIT_GEO_PATTERNS):
+        return "outside", []
+
+    return "unknown", []
+
+
+def analyze_geo_for_work(text):
+    local_found = find_pattern_labels(text, LOCAL_GEO_PATTERNS)
+
+    if local_found:
+        return "allowed", local_found
+
+    if has_any_pattern(text, MOSCOW_MO_PATTERNS):
+        return "allowed", ["Москва / Московская область"]
+
+    if has_any_pattern(text, EXPLICIT_GEO_PATTERNS):
+        return "outside", []
+
+    return "unknown", []
+
+
 # ============================================================
-# НУЖНАЯ СПЕЦТЕХНИКА / РАБОТЫ
-# ============================================================
-#
-# ОСТАВЛЯЕМ:
-#
-# Экскаватор-погрузчик
-# Мини-погрузчик
-# Самосвал
-# Каток
-#
-# УБРАЛИ:
-#
-# Мини-экскаватор
-# Обычный экскаватор
-# Манипулятор
-# Автокран
-# Бульдозер
-# Трактор
-# Грейдер
+# НАША ТЕХНИКА
 # ============================================================
 
 equipment_words = [
-
-    # --------------------------------------------------------
-    # ЭКСКАВАТОР-ПОГРУЗЧИК
-    # --------------------------------------------------------
-
     "экскаватор-погрузчик",
-
     "экскаватор погрузчик",
-
     "jcb",
-
     "джсб",
 
-
-    # --------------------------------------------------------
-    # МИНИ-ПОГРУЗЧИК
-    # --------------------------------------------------------
-
     "мини-погрузчик",
-
     "мини погрузчик",
-
     "минипогрузчик",
-
     "бобкэт",
-
     "бобкат",
-
     "bobcat",
 
-
-    # --------------------------------------------------------
-    # САМОСВАЛ
-    # --------------------------------------------------------
-
     "самосвал",
-
     "самосвалы",
-
     "самосвала",
-
     "самосвалов",
-
-
-    # --------------------------------------------------------
-    # КАТОК
-    # --------------------------------------------------------
+    "howo",
+    "хово",
+    "8x4",
+    "8×4",
+    "6x4",
+    "6×4",
+    "20 м3",
+    "20 м³",
 
     "каток",
-
     "виброкаток",
-
-
-    # --------------------------------------------------------
-    # ЗЕМЛЯНЫЕ РАБОТЫ
-    # --------------------------------------------------------
-
-    "копать",
-
-    "копка",
-
-    "котлован",
-
-    "траншея",
-
-    "планировка",
-
-    "вывоз грунта",
-
-    "вывоз земли",
-
-    "земляные работы",
-
-
-    # --------------------------------------------------------
-    # ДОРОГИ / АСФАЛЬТ
-    # --------------------------------------------------------
-
-    "дорожные работы",
-
-    "асфальтирование",
-
-    "укладка асфальта",
-
-    "ямочный ремонт",
-
-
-    # --------------------------------------------------------
-    # СНЕГ
-    # --------------------------------------------------------
-
-    "вывоз снега",
-
-    "вывезти снег",
-
-    "вывезти снега",
-
-    "вывести снег",
-
-    "уборка снега",
-
-    "убрать снег",
-
-    "убрать снега",
-
-    "очистка снега",
-
-    "очистить снег",
-
-    "очистка от снега",
-
-    "очистить от снега",
-
-    "очистка территории от снега",
-
-    "очистка дорог от снега",
-
-    "очистка парковки от снега",
-
-    "расчистка снега",
-
-    "расчистить снег",
-
-    "расчистка от снега",
-
-    "погрузка снега",
-
-    "погрузить снег",
-
-    "погрузка и вывоз снега",
-
-    "уборка и вывоз снега",
-
-    "механизированная уборка снега",
-
-    "механизированная очистка снега",
-
-    "снегоуборка",
-
-    "снегоуборочные работы",
-
-    "снег вывоз",
+    "дорожный каток",
 ]
 
 
 # ============================================================
-# ЗАПРЕЩЁННАЯ / НЕНУЖНАЯ ТЕХНИКА
-# ============================================================
-#
-# Если такая техника явно указана в заявке,
-# сообщение сразу отбрасываем.
+# РАБОТЫ / ПОДРЯДЫ
 # ============================================================
 
-unwanted_equipment_patterns = [
+work_words = [
+    "асфальтирование",
+    "укладка асфальта",
+    "асфальтобетон",
+    "асфальтобетонное покрытие",
+    "аб покрытие",
+    "дорожные работы",
+    "строительство дороги",
+    "строительство дорог",
+    "ремонт дороги",
+    "ремонт дорог",
+    "ямочный ремонт",
+    "внутриплощадочные дороги",
+    "внутридворовые дороги",
+    "проезд",
+    "проезды",
+    "парковка",
+    "парковки",
+    "стоянка",
+    "стоянки",
+    "площадка",
+    "площадки",
+    "тротуар",
+    "тротуары",
 
-    # Мини-экскаватор
+    "благоустройство",
+    "комплексное благоустройство",
+    "благоустройство территории",
+    "дворовая территория",
+    "дворовые территории",
 
-    r"\bмини[\s-]*экскаватор\w*\b",
+    "бордюр",
+    "бордюры",
+    "бортовой камень",
+    "дорожный борт",
+    "тротуарный борт",
+    "устройство основания",
+    "дорожная одежда",
+    "подстилающий слой",
+    "щебеночное основание",
+    "щебёночное основание",
+    "песчаное основание",
+    "послойное уплотнение",
+    "уплотнение",
 
-    r"\bминиэкскаватор\w*\b",
+    "земляные работы",
+    "разработка грунта",
+    "выемка грунта",
+    "котлован",
+    "котлованы",
+    "траншея",
+    "траншеи",
+    "планировка",
+    "планировка территории",
+    "вертикальная планировка",
+    "отсыпка",
+    "обратная засыпка",
+    "замена грунта",
+    "вывоз грунта",
+    "вывоз земли",
+
+    "демонтаж асфальта",
+    "демонтаж покрытия",
+    "демонтаж покрытий",
+    "демонтаж",
+    "строительный бой",
+    "вывоз боя",
+    "утилизация грунта",
+    "прием грунта",
+    "приём грунта",
+
+    "дренаж",
+    "ливневка",
+    "ливнёвка",
+    "водоотведение",
+    "наружные сети",
+    "наружные работы",
+
+    "вывоз снега",
+    "уборка снега",
+    "погрузка снега",
+    "расчистка снега",
+    "очистка от снега",
+    "снегоуборочные работы",
+]
 
 
-    # Манипулятор
-
-    r"\bманипулятор\w*\b",
-
-
-    # Автокран
-
-    r"\bавтокран\w*\b",
-
-
-    # Бульдозер
-
-    r"\bбульдозер\w*\b",
-
-
-    # Трактор
-
-    r"\bтрактор\w*\b",
-
-
-    # Грейдер
-
-    r"\bгрейдер\w*\b",
+contract_words = [
+    "требуется подрядчик",
+    "требуются подрядчики",
+    "ищем подрядчика",
+    "ищу подрядчика",
+    "нужен подрядчик",
+    "нужны подрядчики",
+    "субподряд",
+    "субподрядчик",
+    "генподряд",
+    "генподрядчик",
+    "объем работ",
+    "объём работ",
+    "объемы работ",
+    "объёмы работ",
+    "вор",
+    "ведомость объемов",
+    "ведомость объёмов",
+    "запрос кп",
+    "коммерческое предложение",
+    "тендер",
+    "требуется бригада",
+    "ищем бригаду",
+    "можно приступать",
+    "начало работ",
+    "давальческий материал",
 ]
 
 
@@ -515,355 +486,206 @@ unwanted_equipment_patterns = [
 # ============================================================
 
 material_words = [
-
     "песок",
-
     "песка",
-
     "щебень",
-
     "щебня",
-
     "грунт",
-
     "грунта",
-
     "чернозем",
-
     "чернозём",
-
     "пгс",
-
     "опгс",
-
+    "щпс",
+    "асфальт",
     "асфальтный скол",
-
-    "асфальтного скола",
-
     "асфальтовый скол",
-
     "асфальтная крошка",
-
     "асфальтовая крошка",
-
-    "асфальтной крошки",
-
-    "асфальтовой крошки",
-
     "асфальтовый лом",
-
     "лом асфальта",
-
     "асфальтный срез",
-
     "асфальтовый срез",
-
     "бой бетона",
-
     "бетонный бой",
-
     "бой бетонный",
+    "нерудка",
 ]
 
 
 # ============================================================
-# ПРИЗНАК ЗАЯВКИ — ОБЯЗАТЕЛЕН
+# ПРИЗНАК ЗАЯВКИ
 # ============================================================
 
 request_words = [
-
     "нужен",
-
     "нужна",
-
     "нужно",
-
     "нужны",
-
     "надо",
-
     "необходим",
-
     "необходима",
-
     "необходимо",
-
     "необходимы",
-
     "требуется",
-
     "требуются",
-
     "ищу",
-
     "ищем",
-
     "ищет",
-
     "ищут",
-
     "кто может",
-
     "кто сможет",
-
     "кто есть",
-
     "есть кто",
-
     "возьму в аренду",
-
     "возьмем в аренду",
-
     "возьмём в аренду",
-
     "арендовать",
-
     "аренда",
-
     "нужна техника",
-
     "нужна спецтехника",
-
     "нужен материал",
-
     "нужны материалы",
-
     "нужна доставка",
-
     "купить",
-
     "куплю",
-
     "купим",
-
-    "хочу купить",
-
-    "хотим купить",
-
-    "хотят купить",
-
-    "нужно купить",
-
-    "надо купить",
-
     "приобрести",
-
-    "хочу приобрести",
-
-    "хотим приобрести",
-
     "закупаем",
-
     "закупаем материал",
-
     "закупаем материалы",
-
     "заказать",
-
-    "хочу заказать",
-
-    "хотим заказать",
-
     "нужно заказать",
-
     "кто привезет",
-
     "кто привезёт",
-
     "кто доставит",
-
     "привезти",
-
     "доставить",
+    "подрядчик",
+    "подрядчики",
+    "субподряд",
+    "объем работ",
+    "объём работ",
+    "объемы работ",
+    "объёмы работ",
+    "запрос кп",
+    "тендер",
 ]
 
 
 # ============================================================
-# РЕКЛАМА / ПРЕДЛОЖЕНИЯ / ВАКАНСИИ
+# РЕКЛАМА / ВАКАНСИИ
 # ============================================================
 
 ad_exclude_words = [
-
     "помощь диспетчера",
-
     "по размещению рекламы",
-
     "размещение рекламы",
-
     "услуги спецтехники",
-
     "предлагаем спецтехнику",
-
     "предлагаю спецтехнику",
-
     "сдам в аренду",
-
     "сдаю в аренду",
-
     "сдаем в аренду",
-
     "сдаём в аренду",
-
     "сдам спецтехнику",
-
     "сдается техника",
-
     "сдаётся техника",
-
     "наша техника",
-
     "наш автопарк",
-
     "техника в наличии",
-
     "в наличии техника",
-
     "свободная техника",
-
     "свободна техника",
-
     "свободен экскаватор",
-
     "свободен погрузчик",
-
     "свободен самосвал",
-
     "есть свободная техника",
-
     "готовы выехать",
-
     "предоставим технику",
-
     "предоставляем технику",
-
     "оказываем услуги",
-
     "аренда спецтехники от",
-
     "предлагаем аренду",
-
     "вакансия",
-
     "ищу работу",
-
     "ищет работу",
-
     "машинист ищет работу",
-
     "водитель ищет работу",
-
     "резюме",
-
     "требуется машинист",
-
     "требуется водитель",
-
     "требуются рабочие",
-
     "требуется рабочий",
-
     "требуются сотрудники",
-
     "требуется сотрудник",
-
     "гражданство:",
-
     "фото паспорта",
-
-    "ежедневная оплата",
 ]
-
 
 exclude_words = [
-
     "продам",
-
     "продаю",
-
     "продается",
-
     "продаётся",
-
     "вакансия",
-
     "ищу работу",
-
     "ищет работу",
-
     "резюме",
 ]
 
-
 job_patterns = [
-
     r"\bтребует(?:ся|ются)\s+(?:\d+\s+)?рабоч",
-
     r"\bищем\s+(?:\d+\s+)?рабоч",
-
     r"\bнужн(?:ы|о|а|ен)\s+(?:\d+\s+)?рабоч",
-
     r"\bваканси",
-
     r"\bгражданство\s*:",
-
     r"\bфото\s+паспорта",
-
-    r"\bежедневная\s+оплата",
 ]
 
 
 # ============================================================
-# ПОИСК СЛОВ БЕЗ ЛОЖНЫХ СОВПАДЕНИЙ
+# НЕНУЖНАЯ ТЕХНИКА
+# ============================================================
+
+unwanted_equipment_patterns = [
+    r"\bмини[\s-]*экскаватор\w*\b",
+    r"\bминиэкскаватор\w*\b",
+    r"\bманипулятор\w*\b",
+    r"\bавтокран\w*\b",
+    r"\bбульдозер\w*\b",
+    r"\bтрактор\w*\b",
+    r"\bгрейдер\w*\b",
+]
+
+
+# ============================================================
+# ПОИСК СЛОВ
 # ============================================================
 
 def contains_word(text, word):
-
     text = text.lower()
-
     word = word.lower()
 
-    if " " in word or "-" in word:
-
+    if " " in word or "-" in word or "×" in word:
         return word in text
 
-    pattern = (
-        r"(?<!\w)"
-        + re.escape(word)
-        + r"(?!\w)"
-    )
-
-    return (
-        re.search(
-            pattern,
-            text,
-            flags=re.IGNORECASE
-        )
-        is not None
-    )
+    pattern = r"(?<!\w)" + re.escape(word) + r"(?!\w)"
+    return re.search(pattern, text, flags=re.IGNORECASE) is not None
 
 
 def find_matches(text, words):
-
     found = []
 
     for word in words:
+        if contains_word(text, word):
+            found.append(word)
 
-        if contains_word(
-            text,
-            word
-        ):
-
-            found.append(
-                word
-            )
-
-    return list(
-        dict.fromkeys(found)
-    )
+    return list(dict.fromkeys(found))
 
 
 # ============================================================
-# ПОИСК ТЕЛЕФОНА
+# ТЕЛЕФОН — ОБЯЗАТЕЛЕН
 # ============================================================
 
 phone_pattern = re.compile(
@@ -885,137 +707,46 @@ phone_pattern = re.compile(
 
 
 def find_phone(text):
-
-    match = phone_pattern.search(
-        text
-    )
+    match = phone_pattern.search(text)
 
     if not match:
-
         return None
 
-    phone = match.group(0)
+    digits = re.sub(r"\D", "", match.group(0))
 
-    digits = re.sub(
-        r"\D",
-        "",
-        phone
-    )
+    if len(digits) == 11 and digits.startswith("8"):
+        digits = "7" + digits[1:]
 
-    if (
-        len(digits) == 11
-        and digits.startswith("8")
-    ):
-
-        digits = (
-            "7"
-            + digits[1:]
-        )
-
-    if (
-        len(digits) != 11
-        or not digits.startswith("7")
-    ):
-
+    if len(digits) != 11 or not digits.startswith("7"):
         return None
 
-    return (
-        "+"
-        + digits
-    )
+    return "+" + digits
 
 
 # ============================================================
 # АНТИДУБЛЬ
 # ============================================================
-#
-# Одна и та же заявка часто копируется в разные группы.
-#
-# Старый вариант:
-# chat_id + message_id
-#
-# не помогал, потому что в каждой группе ID разные.
-#
-# Теперь создаём отпечаток:
-#
-# телефон + нормализованный текст.
-#
-# Повтор в течение 24 часов НЕ отправляется.
-# ============================================================
 
 DUPLICATE_TTL = 24 * 60 * 60
-
 seen_leads = {}
 
 
 def normalize_lead_text(text):
-
-    value = (
-        text
-        or ""
-    ).lower()
-
-    value = value.replace(
-        "ё",
-        "е"
-    )
-
-    # Убираем ссылки.
-    value = re.sub(
-        r"https?://\S+",
-        " ",
-        value
-    )
-
-    # Убираем @username.
-    value = re.sub(
-        r"@\w+",
-        " ",
-        value
-    )
-
-    # Оставляем буквы и цифры.
-    value = re.sub(
-        r"[^a-zа-я0-9]+",
-        " ",
-        value,
-        flags=re.IGNORECASE
-    )
-
-    # Нормализуем пробелы.
-    value = re.sub(
-        r"\s+",
-        " ",
-        value
-    ).strip()
-
+    value = normalize_text(text)
+    value = re.sub(r"https?://\S+", " ", value)
+    value = re.sub(r"@\w+", " ", value)
+    value = re.sub(r"[^a-zа-я0-9]+", " ", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+", " ", value).strip()
     return value
 
 
-def make_lead_key(
-    text,
-    phone
-):
-
-    normalized = normalize_lead_text(
-        text
-    )
-
-    raw_key = (
-        phone
-        + "|"
-        + normalized
-    )
-
-    return hashlib.sha256(
-        raw_key.encode(
-            "utf-8"
-        )
-    ).hexdigest()
+def make_lead_key(text, phone):
+    normalized = normalize_lead_text(text)
+    raw_key = phone + "|" + normalized[:1000]
+    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
 
 def cleanup_seen_leads():
-
     now = time.time()
 
     expired = [
@@ -1025,55 +756,71 @@ def cleanup_seen_leads():
     ]
 
     for key in expired:
-
-        seen_leads.pop(
-            key,
-            None
-        )
+        seen_leads.pop(key, None)
 
 
-def is_duplicate_lead(
-    text,
-    phone
-):
-
+def is_duplicate_lead(text, phone):
     cleanup_seen_leads()
-
-    key = make_lead_key(
-        text,
-        phone
-    )
+    key = make_lead_key(text, phone)
 
     if key in seen_leads:
+        return True, key
 
-        return (
-            True,
-            key
-        )
-
-    return (
-        False,
-        key
-    )
+    return False, key
 
 
 def remember_lead(key):
-
     seen_leads[key] = time.time()
 
 
 # ============================================================
-# ОЦЕНКА ЗАЯВКИ
+# КЛАССИФИКАЦИЯ
 # ============================================================
 
-def calculate_score(
-    text,
-    equipment_found,
-    material_found,
-    location_found
-):
+def classify_lead(text_lower):
+    equipment_found = find_matches(text_lower, equipment_words)
+    work_found = find_matches(text_lower, work_words)
+    contract_found = find_matches(text_lower, contract_words)
+    material_found = find_matches(text_lower, material_words)
 
+    is_work_lead = bool(work_found or contract_found)
+
+    return {
+        "equipment_found": equipment_found,
+        "work_found": work_found,
+        "contract_found": contract_found,
+        "material_found": material_found,
+        "is_work_lead": is_work_lead,
+    }
+
+
+def is_only_unwanted_equipment(text_lower, classification):
+    if classification["equipment_found"]:
+        return False
+
+    if classification["work_found"] or classification["contract_found"]:
+        return False
+
+    if classification["material_found"]:
+        return False
+
+    return any(
+        re.search(pattern, text_lower, flags=re.IGNORECASE)
+        for pattern in unwanted_equipment_patterns
+    )
+
+
+# ============================================================
+# ОЦЕНКА
+# ============================================================
+
+def calculate_score(text, classification, location_found, priority_source=False):
     score = 1
+
+    equipment_found = classification["equipment_found"]
+    work_found = classification["work_found"]
+    contract_found = classification["contract_found"]
+    material_found = classification["material_found"]
 
     if any(
         word in text
@@ -1085,7 +832,6 @@ def calculate_score(
             "в течение часа",
         ]
     ):
-
         score += 3
 
     elif any(
@@ -1096,9 +842,15 @@ def calculate_score(
             "утром",
         ]
     ):
-
         score += 2
 
+    if contract_found:
+        score += 3
+
+    if len(work_found) >= 3:
+        score += 3
+    elif work_found:
+        score += 2
 
     if any(
         word in text
@@ -1109,7 +861,6 @@ def calculate_score(
             "джсб",
         ]
     ):
-
         score += 3
 
     elif any(
@@ -1122,600 +873,352 @@ def calculate_score(
             "бобкэт",
             "бобкат",
             "самосвал",
+            "каток",
         ]
     ):
-
         score += 2
-
-
-    if any(
-        word in text
-        for word in [
-            "вывоз снега",
-            "уборка снега",
-            "очистка снега",
-            "очистка от снега",
-            "погрузка снега",
-            "расчистка снега",
-        ]
-    ):
-
-        score += 2
-
-
-    if any(
-        word in text
-        for word in [
-            "асфальтный скол",
-            "асфальтовый скол",
-            "асфальтная крошка",
-            "асфальтовая крошка",
-            "асфальтный срез",
-            "бой бетона",
-            "бетонный бой",
-            "щебень",
-            "песок",
-        ]
-    ):
-
-        score += 2
-
-
-    if location_found:
-
-        score += 1
-
-
-    if equipment_found:
-
-        score += 1
-
 
     if material_found:
-
         score += 1
 
+    if location_found:
+        score += 1
 
-    return min(
-        score,
-        10
-    )
+    if priority_source:
+        score += 1
+
+    return min(score, 10)
 
 
 # ============================================================
-# ОТПРАВКА В TELEGRAM-БОТА
+# ОТПРАВКА В БОТА
 # ============================================================
 
 def send_bot_part(message):
-
-    url = (
-        f"https://api.telegram.org/"
-        f"bot{bot_token}/sendMessage"
-    )
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
     data = urllib.parse.urlencode({
         "chat_id": bot_chat_id,
         "text": message,
         "disable_web_page_preview": "true",
-    }).encode(
-        "utf-8"
-    )
+    }).encode("utf-8")
 
-    request = urllib.request.Request(
-        url,
-        data=data
-    )
+    request = urllib.request.Request(url, data=data)
 
     try:
-
-        with urllib.request.urlopen(
-            request,
-            timeout=30
-        ) as response:
-
+        with urllib.request.urlopen(request, timeout=30) as response:
             response.read()
 
-        print(
-            "✅ Telegram: сообщение отправлено",
-            flush=True
-        )
-
+        print("✅ Telegram: сообщение отправлено", flush=True)
         return True
 
     except urllib.error.HTTPError as error:
-
         try:
-
-            body = (
-                error
-                .read()
-                .decode("utf-8")
-            )
-
+            body = error.read().decode("utf-8")
         except Exception:
-
             body = ""
 
         print(
             "❌ TELEGRAM HTTP ERROR:",
             error.code,
             body,
-            flush=True
+            flush=True,
         )
 
         return False
 
     except Exception as error:
-
         print(
             "❌ TELEGRAM ERROR:",
             repr(error),
-            flush=True
+            flush=True,
         )
 
         return False
 
 
-def split_message(
-    text,
-    max_length=3800
-):
-
+def split_message(text, max_length=3800):
     if len(text) <= max_length:
-
-        return [
-            text
-        ]
+        return [text]
 
     parts = []
-
     remaining = text
 
     while remaining:
-
         if len(remaining) <= max_length:
-
-            parts.append(
-                remaining
-            )
-
+            parts.append(remaining)
             break
 
-        cut = remaining.rfind(
-            "\n",
-            0,
-            max_length
-        )
+        cut = remaining.rfind("\n", 0, max_length)
 
         if cut < 1000:
-
             cut = max_length
 
-        parts.append(
-            remaining[:cut]
-        )
-
-        remaining = (
-            remaining[cut:]
-            .lstrip()
-        )
+        parts.append(remaining[:cut])
+        remaining = remaining[cut:].lstrip()
 
     return parts
 
 
 def send_to_bot(message):
+    parts = split_message(message)
 
-    parts = split_message(
-        message
-    )
-
-    for index, part in enumerate(
-        parts,
-        start=1
-    ):
-
+    for index, part in enumerate(parts, start=1):
         if len(parts) > 1:
+            part = f"Часть {index}/{len(parts)}\n\n" + part
 
-            part = (
-                f"Часть {index}/{len(parts)}\n\n"
-                + part
-            )
-
-        success = send_bot_part(
-            part
-        )
-
-        if not success:
-
+        if not send_bot_part(part):
             return False
 
     return True
 
 
 # ============================================================
-# ОБРАБОТЧИК TELEGRAM
+# ОБРАБОТЧИК
 # ============================================================
 
 @client.on(events.NewMessage)
 async def handler(event):
-
     try:
-
-        text = (
-            event.raw_text
-            or ""
-        ).strip()
+        text = (event.raw_text or "").strip()
 
         if not text:
-
-            print(
-                "REJECT: пустое сообщение",
-                flush=True
-            )
-
+            print("REJECT: пустое сообщение", flush=True)
             return
 
-
-        text_lower = (
-            text.lower()
-        )
-
+        text_lower = normalize_text(text)
 
         # ----------------------------------------------------
-        # ЧАТ / ГРУППА
+        # ЧАТ
         # ----------------------------------------------------
-
         try:
-
             chat = await event.get_chat()
-
         except Exception:
-
             chat = None
 
+        if not chat:
+            print("REJECT: не удалось определить чат", flush=True)
+            return
 
         chat_name = (
-            getattr(
-                chat,
-                "title",
-                None
-            )
-            or getattr(
-                chat,
-                "username",
-                None
-            )
+            getattr(chat, "title", None)
+            or getattr(chat, "username", None)
             or "Личный чат"
         )
 
+        chat_username = getattr(chat, "username", None)
+
+        # ----------------------------------------------------
+        # ИСТОЧНИК
+        # ----------------------------------------------------
+        # Читаем ВСЕ группы/каналы, которые видит аккаунт.
+        # Наш собранный список только помечаем как приоритетный.
+        priority_source = source_is_priority(chat)
+
+        print(
+            f"ИСТОЧНИК: {'⭐ из нашей базы' if priority_source else 'обычная группа аккаунта'}",
+            flush=True,
+        )
 
         # ----------------------------------------------------
         # АВТОР
         # ----------------------------------------------------
-
         try:
-
             sender = await event.get_sender()
-
         except Exception:
-
             sender = None
 
+        username = getattr(sender, "username", None)
+        first_name = getattr(sender, "first_name", None)
+        last_name = getattr(sender, "last_name", None)
 
-        username = getattr(
-            sender,
-            "username",
-            None
-        )
-
-        first_name = getattr(
-            sender,
-            "first_name",
-            None
-        )
-
-        last_name = getattr(
-            sender,
-            "last_name",
-            None
-        )
-
-
-        if (
-            username
-            and username.lower()
-            == "spec_clients_bot"
-        ):
-
-            print(
-                "REJECT: собственный бот",
-                flush=True
-            )
-
+        if username and username.lower() == "spec_clients_bot":
+            print("REJECT: собственный бот", flush=True)
             return
-
 
         # ----------------------------------------------------
         # ЛОГ
         # ----------------------------------------------------
+        short_text = text.replace("\n", " ")[:500]
 
-        short_text = (
-            text
-            .replace("\n", " ")
-            [:500]
-        )
-
-
-        print(
-            "\n"
-            + "=" * 70,
-            flush=True
-        )
-
-        print(
-            f"RECEIVED | {chat_name} | {short_text}",
-            flush=True
-        )
-
+        print("\n" + "=" * 70, flush=True)
+        print(f"RECEIVED | {chat_name} | {short_text}", flush=True)
 
         # ----------------------------------------------------
         # РЕКЛАМА / ВАКАНСИЯ
         # ----------------------------------------------------
-
         ad_found = find_matches(
             text_lower,
-            ad_exclude_words
-            + exclude_words
+            ad_exclude_words + exclude_words,
         )
 
         if ad_found:
-
             print(
                 "REJECT: реклама/вакансия:",
                 ad_found,
-                flush=True
+                flush=True,
             )
-
             return
 
-
         for pattern in job_patterns:
-
             if re.search(
                 pattern,
                 text_lower,
-                flags=re.IGNORECASE
+                flags=re.IGNORECASE,
             ):
-
-                print(
-                    "REJECT: job",
-                    flush=True
-                )
-
+                print("REJECT: job", flush=True)
                 return
 
-
         # ----------------------------------------------------
-        # НЕНУЖНАЯ ТЕХНИКА
+        # КЛАССИФИКАЦИЯ
         # ----------------------------------------------------
+        classification = classify_lead(text_lower)
 
-        for pattern in unwanted_equipment_patterns:
+        equipment_found = classification["equipment_found"]
+        work_found = classification["work_found"]
+        contract_found = classification["contract_found"]
+        material_found = classification["material_found"]
 
-            if re.search(
-                pattern,
-                text_lower,
-                flags=re.IGNORECASE
-            ):
-
-                print(
-                    "REJECT: ненужная техника:",
-                    pattern,
-                    flush=True
-                )
-
-                return
-
-
-        # ----------------------------------------------------
-        # НУЖНАЯ ТЕХНИКА / РАБОТЫ
-        # ----------------------------------------------------
-
-        equipment_found = find_matches(
-            text_lower,
-            equipment_words
-        )
-
-
-        # ----------------------------------------------------
-        # МАТЕРИАЛЫ
-        # ----------------------------------------------------
-
-        material_found = find_matches(
-            text_lower,
-            material_words
-        )
-
-
-        print(
-            "Техника/работы:",
-            equipment_found,
-            flush=True
-        )
-
-        print(
-            "Материалы:",
-            material_found,
-            flush=True
-        )
-
+        print("Наша техника:", equipment_found, flush=True)
+        print("Работы:", work_found, flush=True)
+        print("Подряд:", contract_found, flush=True)
+        print("Материалы:", material_found, flush=True)
 
         if (
             not equipment_found
+            and not work_found
+            and not contract_found
             and not material_found
         ):
-
-            print(
-                "REJECT: нет нашей техники/работ/материала",
-                flush=True
-            )
+            if is_only_unwanted_equipment(
+                text_lower,
+                classification,
+            ):
+                print(
+                    "REJECT: только ненужная техника",
+                    flush=True,
+                )
+            else:
+                print(
+                    "REJECT: нет нашей техники/работ/материалов",
+                    flush=True,
+                )
 
             return
-
 
         # ----------------------------------------------------
         # ПРИЗНАК ЗАЯВКИ
         # ----------------------------------------------------
-
         request_found = find_matches(
             text_lower,
-            request_words
+            request_words,
         )
-
 
         print(
             "Признак заявки:",
             request_found,
-            flush=True
+            flush=True,
         )
 
-
-        if not request_found:
-
+        if not request_found and not contract_found:
             print(
                 "REJECT: нет признака заявки",
-                flush=True
+                flush=True,
             )
-
             return
-
 
         # ----------------------------------------------------
         # ГЕОГРАФИЯ
         # ----------------------------------------------------
+        if classification["is_work_lead"]:
+            lead_type = "🏗 РАБОТЫ / ПОДРЯД"
+            geo_status, location_found = analyze_geo_for_work(
+                text_lower
+            )
 
-        geo_status, location_found = analyze_geo(
-            text_lower
-        )
+            if geo_status == "outside":
+                print(
+                    "REJECT: подряд явно вне Москвы/МО",
+                    flush=True,
+                )
+                return
 
+        else:
+            lead_type = "🚜 ТЕХНИКА / МАТЕРИАЛ"
+            geo_status, location_found = analyze_geo_for_equipment(
+                text_lower
+            )
 
+            if geo_status == "outside":
+                print(
+                    "REJECT: техника/материал вне нашей зоны",
+                    flush=True,
+                )
+                return
+
+        print("Тип:", lead_type, flush=True)
         print(
             "География:",
             geo_status,
             location_found,
-            flush=True
+            flush=True,
         )
 
-
-        if geo_status == "outside":
-
-            print(
-                "REJECT: явно указано местоположение "
-                "вне нашей зоны",
-                flush=True
-            )
-
-            return
-
-
-        if geo_status == "unknown":
-
-            print(
-                "INFO: район не указан",
-                flush=True
-            )
-
-
         # ----------------------------------------------------
-        # ТЕЛЕФОН
+        # ТЕЛЕФОН — ОБЯЗАТЕЛЕН
         # ----------------------------------------------------
-
-        phone = find_phone(
-            text
-        )
-
+        phone = find_phone(text)
 
         if not phone:
-
             print(
                 "REJECT: НЕТ ТЕЛЕФОНА",
-                flush=True
+                flush=True,
             )
-
             return
 
-
-        print(
-            "Телефон:",
-            phone,
-            flush=True
-        )
-
+        print("Телефон:", phone, flush=True)
 
         # ----------------------------------------------------
-        # АНТИДУБЛЬ 24 ЧАСА
+        # АНТИДУБЛЬ
         # ----------------------------------------------------
-
         duplicate, lead_key = is_duplicate_lead(
             text,
-            phone
+            phone,
         )
 
-
         if duplicate:
-
             print(
                 "REJECT: такая заявка уже приходила "
                 "за последние 24 часа",
-                flush=True
+                flush=True,
             )
-
             return
-
 
         # ----------------------------------------------------
         # ОЦЕНКА
         # ----------------------------------------------------
-
         score = calculate_score(
             text_lower,
-            equipment_found,
-            material_found,
-            location_found
+            classification,
+            location_found,
+            priority_source=priority_source,
         )
 
-
-        if score >= 7:
-
-            priority = (
-                "🔥 ГОРЯЧАЯ ЗАЯВКА"
-            )
-
+        if score >= 8:
+            priority = "🔥🔥🔥 ВЫСОКИЙ ПРИОРИТЕТ"
+        elif score >= 6:
+            priority = "🔥🔥 ХОРОШАЯ ЗАЯВКА"
         elif score >= 4:
-
-            priority = (
-                "🟠 ХОРОШАЯ ЗАЯВКА"
-            )
-
+            priority = "🔥 ПОДХОДИТ"
         else:
-
-            priority = (
-                "🟡 НОВАЯ ЗАЯВКА"
-            )
-
+            priority = "🟡 НОВАЯ ЗАЯВКА"
 
         # ----------------------------------------------------
-        # ИМЯ АВТОРА
+        # АВТОР
         # ----------------------------------------------------
-
         if username:
-
-            sender_name = (
-                "@"
-                + username
-            )
-
+            sender_name = "@" + username
         else:
-
             sender_name = " ".join(
                 part
                 for part in [
@@ -1725,164 +1228,127 @@ async def handler(event):
                 if part
             ).strip()
 
-
             if not sender_name:
-
-                sender_name = (
-                    "Не указан"
-                )
-
+                sender_name = "Не указан"
 
         # ----------------------------------------------------
-        # ССЫЛКА НА ОРИГИНАЛ
+        # ССЫЛКА
         # ----------------------------------------------------
-
         message_link = ""
 
-        chat_username = getattr(
-            chat,
-            "username",
-            None
-        )
-
-
         if chat_username:
-
             message_link = (
                 "https://t.me/"
                 f"{chat_username}/"
                 f"{event.id}"
             )
 
-
         # ----------------------------------------------------
-        # ГЕОГРАФИЯ ДЛЯ БОТА
+        # СТРОКИ
         # ----------------------------------------------------
-
-        if location_found:
-
-            geo_line = ", ".join(
-                location_found
-            )
-
-        else:
-
-            geo_line = (
-                "не указан"
-            )
-
-
-        # ----------------------------------------------------
-        # ТЕХНИКА
-        # ----------------------------------------------------
+        geo_line = (
+            ", ".join(location_found)
+            if location_found
+            else "не указан"
+        )
 
         equipment_line = ""
-
         if equipment_found:
-
             equipment_line = (
-                "🚜 Техника / работы: "
-                + ", ".join(
-                    equipment_found
-                )
+                "🚜 Наша техника: "
+                + ", ".join(equipment_found)
                 + "\n"
             )
 
+        work_line = ""
+        if work_found:
+            work_line = (
+                "🏗 Работы: "
+                + ", ".join(work_found)
+                + "\n"
+            )
 
-        # ----------------------------------------------------
-        # МАТЕРИАЛ
-        # ----------------------------------------------------
+        contract_line = ""
+        if contract_found:
+            contract_line = (
+                "📋 Подряд: "
+                + ", ".join(contract_found)
+                + "\n"
+            )
 
         material_line = ""
-
         if material_found:
-
             material_line = (
-                "🧱 Материал: "
-                + ", ".join(
-                    material_found
-                )
+                "🧱 Материалы: "
+                + ", ".join(material_found)
                 + "\n"
             )
-
 
         # ----------------------------------------------------
         # СООБЩЕНИЕ
         # ----------------------------------------------------
+        source_line = (
+            "⭐ Источник: из нашей собранной базы"
+            if priority_source
+            else "📢 Источник: одна из ваших текущих групп"
+        )
 
         alert = (
             f"{priority}\n"
-
-            f"⭐ Приоритет: {score}/10\n\n"
+            f"{lead_type}\n"
+            f"⭐ Приоритет: {score}/10\n"
+            f"{source_line}\n\n"
 
             f"{equipment_line}"
-
+            f"{work_line}"
+            f"{contract_line}"
             f"{material_line}"
 
             f"📍 Район: {geo_line}\n"
-
             f"📞 ТЕЛЕФОН: {phone}\n\n"
 
             f"💬 ПОЛНЫЙ ТЕКСТ ЗАЯВКИ:\n"
-
             f"{text}\n\n"
 
             f"👤 Автор: {sender_name}\n"
-
             f"📢 Группа: {chat_name}"
         )
 
-
         if message_link:
-
             alert += (
                 "\n\n"
                 "🔗 Открыть оригинал:\n"
                 f"{message_link}"
             )
 
-
         # ----------------------------------------------------
         # ОТПРАВКА
         # ----------------------------------------------------
-
         print(
             "SEND: заявка прошла фильтры",
-            flush=True
+            flush=True,
         )
 
-
-        sent = send_to_bot(
-            alert
-        )
-
+        sent = send_to_bot(alert)
 
         if sent:
-
-            # Запоминаем заявку ТОЛЬКО после успешной отправки.
-            remember_lead(
-                lead_key
-            )
+            remember_lead(lead_key)
 
             print(
                 "✅ ЗАЯВКА УШЛА В TELEGRAM-БОТА",
-                flush=True
+                flush=True,
             )
-
         else:
-
             print(
                 "❌ TELEGRAM НЕ ПРИНЯЛ СООБЩЕНИЕ",
-                flush=True
+                flush=True,
             )
 
-
     except Exception as error:
-
         print(
             "❌ ОШИБКА ОБРАБОТКИ:",
             repr(error),
-            flush=True
+            flush=True,
         )
 
 
@@ -1891,158 +1357,133 @@ async def handler(event):
 # ============================================================
 
 async def main():
-
+    print("\n" + "=" * 70, flush=True)
     print(
-        "\n"
-        + "=" * 70,
-        flush=True
+        "🚀 МОНИТОР ЗАЯВОК ЗАПУСКАЕТСЯ — FILTER v7",
+        flush=True,
     )
-
-
-    print(
-        "🚀 МОНИТОР ЗАЯВОК ЗАПУСКАЕТСЯ — FILTER v4",
-        flush=True
-    )
-
-
-    print(
-        "=" * 70,
-        flush=True
-    )
-
+    print("=" * 70, flush=True)
 
     await client.start()
 
-
     me = await client.get_me()
 
-
-    if getattr(
-        me,
-        "bot",
-        False
-    ):
-
+    if getattr(me, "bot", False):
         raise RuntimeError(
             "TELEGRAM_SESSION авторизована как БОТ. "
             "Для мониторинга нужен обычный Telegram-аккаунт."
         )
 
-
     print(
         "✅ TELEGRAM АККАУНТ АВТОРИЗОВАН",
-        flush=True
+        flush=True,
     )
 
-
     # --------------------------------------------------------
-    # СЧИТАЕМ ГРУППЫ
+    # СЧИТАЕМ ВСЕ ГРУППЫ И НАШ ПРИОРИТЕТНЫЙ СПИСОК
     # --------------------------------------------------------
-
     group_count = 0
-
+    priority_visible = 0
 
     print(
         "\n📋 ГРУППЫ / КАНАЛЫ:",
-        flush=True
+        flush=True,
     )
-
 
     async for dialog in client.iter_dialogs():
-
-        if (
-            dialog.is_group
-            or dialog.is_channel
-        ):
-
+        if dialog.is_group or dialog.is_channel:
             group_count += 1
+            entity = dialog.entity
 
-            print(
-                f"GROUP {group_count}: "
-                f"{dialog.name} | "
-                f"ID: {dialog.id}",
-                flush=True
+            priority_source = source_is_priority(entity)
+
+            if priority_source:
+                priority_visible += 1
+
+            username = (
+                getattr(entity, "username", None)
+                or "-"
             )
 
+            marker = "⭐" if priority_source else "  "
+
+            print(
+                f"{marker} GROUP {group_count}: "
+                f"{dialog.name} | "
+                f"@{username} | "
+                f"ID: {dialog.id}",
+                flush=True,
+            )
 
     print(
-        "\n✅ ВСЕГО ВИДНО ГРУПП/КАНАЛОВ:",
+        "\n📊 ВСЕГО ВИДНО ГРУПП/КАНАЛОВ:",
         group_count,
-        flush=True
+        flush=True,
     )
 
+    print(
+        "⭐ ИЗ НАШЕЙ СОБРАННОЙ БАЗЫ ВИДНО:",
+        priority_visible,
+        flush=True,
+    )
 
     print(
         "👂 ЖДУ НОВЫЕ СООБЩЕНИЯ...",
-        flush=True
+        flush=True,
     )
 
-
     # --------------------------------------------------------
-    # ТЕСТ ПРИ ЗАПУСКЕ
+    # ТЕСТ
     # --------------------------------------------------------
-
     test_message = (
-        "✅ МОНИТОР ЗАЯВОК ЗАПУЩЕН — FILTER v4\n\n"
+        "✅ МОНИТОР ЗАЯВОК ЗАПУЩЕН — FILTER v7\n\n"
 
-        f"Видно групп/каналов: {group_count}\n\n"
+        f"Всего видно групп/каналов: {group_count}\n"
+        f"Из нашей собранной базы видно: {priority_visible}\n\n"
 
-        "🚜 Экскаватор-погрузчик\n"
+        "📢 ОБРАБАТЫВАЮТСЯ ВСЕ ГРУППЫ И КАНАЛЫ, "
+        "КОТОРЫЕ ВИДИТ ВАШ TELEGRAM-АККАУНТ.\n"
+        "⭐ Наш собранный список используется как дополнительный приоритет.\n\n"
 
-        "🚜 Мини-погрузчик\n"
+        "🚜 ЗАЯВКИ ТОЛЬКО НА ТЕХНИКУ:\n"
+        "ЮВАО + Люберцы / Котельники / Дзержинский / "
+        "Лыткарино / Жуковский / Раменское и ближайшая зона.\n\n"
 
-        "🚚 Самосвал\n"
+        "🏗 ЗАЯВКИ НА РАБОТЫ / ПОДРЯДЫ:\n"
+        "ВСЯ Москва + ВСЯ Московская область.\n\n"
 
-        "🛣 Каток\n"
+        "📞 ТЕЛЕФОН В ТЕКСТЕ ЗАЯВКИ ОБЯЗАТЕЛЕН.\n"
+        "Без телефона заявка НЕ отправляется.\n\n"
 
-        "🧱 Материалы\n"
+        "🚜 Наша техника:\n"
+        "• Экскаватор-погрузчик\n"
+        "• Мини-погрузчик\n"
+        "• HOWO / самосвал 20 м³\n"
+        "• Каток 4 т\n\n"
 
-        "🛣 Асфальтирование / дорожные работы\n"
+        "🏗 Наши работы:\n"
+        "• Асфальтирование\n"
+        "• Благоустройство\n"
+        "• Дороги / парковки / площадки\n"
+        "• Бордюры / основания\n"
+        "• Земляные работы\n"
+        "• Демонтаж / вывоз грунта\n"
+        "• Дренаж / наружные сети\n"
+        "• Подряд / субподряд / ВОР / тендер\n\n"
 
-        "❄️ Уборка / погрузка / вывоз снега\n\n"
-
-        "❌ Мини-экскаватор НЕ принимается\n"
-
-        "❌ Манипулятор НЕ принимается\n"
-
-        "❌ Автокран / трактор / бульдозер / грейдер "
-        "НЕ принимаются\n\n"
-
-        "🔎 Признак заявки ОБЯЗАТЕЛЕН\n"
-
-        "📞 Телефон ОБЯЗАТЕЛЕН\n"
-
-        "📍 Москва: только ЮВАО\n"
-
-        "📍 Наша зона МО включена\n"
-
-        "📍 Если адрес вообще не указан — "
-        "заявка не теряется\n\n"
-
-        "🔁 Повтор одинаковой заявки: "
-        "не чаще 1 раза за 24 часа"
+        "🔁 Дубли: не чаще 1 раза за 24 часа."
     )
 
-
-    test_sent = send_to_bot(
-        test_message
-    )
-
-
-    if test_sent:
-
+    if send_to_bot(test_message):
         print(
             "✅ ТЕСТОВОЕ СООБЩЕНИЕ В БОТА ОТПРАВЛЕНО",
-            flush=True
+            flush=True,
         )
-
     else:
-
         print(
             "❌ ТЕСТОВОЕ СООБЩЕНИЕ В БОТА НЕ УШЛО",
-            flush=True
+            flush=True,
         )
-
 
     await client.run_until_disconnected()
 
@@ -2052,26 +1493,19 @@ async def main():
 # ============================================================
 
 if __name__ == "__main__":
-
     try:
-
-        asyncio.run(
-            main()
-        )
+        asyncio.run(main())
 
     except KeyboardInterrupt:
-
         print(
             "Монитор остановлен.",
-            flush=True
+            flush=True,
         )
 
     except Exception as error:
-
         print(
             "❌ КРИТИЧЕСКАЯ ОШИБКА:",
             repr(error),
-            flush=True
+            flush=True,
         )
-
         raise
