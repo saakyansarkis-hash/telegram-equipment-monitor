@@ -13,6 +13,8 @@ import urllib.error
 
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+from telethon.tl.functions.channels import JoinChannelRequest
+from telethon.errors import FloodWaitError, UserAlreadyParticipantError
 
 
 # ============================================================
@@ -38,6 +40,15 @@ if not bot_chat_id:
     raise RuntimeError("BOT_CHAT_ID не указан")
 
 client = TelegramClient(StringSession(session), api_id, api_hash)
+
+# Автовступление в публичные Telegram-группы из нашей базы.
+# Включено по умолчанию. Чтобы отключить: AUTO_JOIN_PRIORITY_SOURCES=0
+AUTO_JOIN_PRIORITY_SOURCES = os.getenv("AUTO_JOIN_PRIORITY_SOURCES", "1").strip() not in {"0", "false", "False"}
+# За один запуск не пытаемся вступить сразу во все недостающие группы,
+# чтобы не упираться в лимиты Telegram.
+AUTO_JOIN_MAX_PER_RUN = int(os.getenv("AUTO_JOIN_MAX_PER_RUN", "8"))
+# Пауза между попытками вступления.
+AUTO_JOIN_DELAY_SEC = float(os.getenv("AUTO_JOIN_DELAY_SEC", "4"))
 
 
 # ============================================================
@@ -248,6 +259,86 @@ def source_is_priority(chat):
         return True
 
     return False
+
+
+async def get_visible_priority_usernames():
+    """Возвращает username источников из нашей базы, которые аккаунт уже видит."""
+    visible = set()
+    async for dialog in client.iter_dialogs():
+        if not (dialog.is_group or dialog.is_channel):
+            continue
+        username = normalize_source_name(
+            getattr(dialog.entity, "username", None)
+        ).lstrip("@")
+        if username and username in PRIORITY_SOURCE_USERNAMES:
+            visible.add(username)
+    return visible
+
+
+async def auto_join_priority_sources():
+    """
+    Пытается вступить в недостающие ПУБЛИЧНЫЕ группы/каналы из
+    PRIORITY_SOURCE_USERNAMES. Приватные источники без username автоматически
+    не добавляются — для них нужна invite-ссылка или одобрение администратора.
+    """
+    result = {
+        "joined": [],
+        "already": [],
+        "failed": [],
+        "skipped": [],
+    }
+
+    if not AUTO_JOIN_PRIORITY_SOURCES:
+        return result
+
+    visible = await get_visible_priority_usernames()
+    missing = sorted(PRIORITY_SOURCE_USERNAMES - visible)
+
+    if not missing:
+        return result
+
+    attempts = 0
+
+    for username in missing:
+        if attempts >= AUTO_JOIN_MAX_PER_RUN:
+            result["skipped"].extend(missing[missing.index(username):])
+            break
+
+        attempts += 1
+        try:
+            entity = await client.get_entity(username)
+            await client(JoinChannelRequest(entity))
+            result["joined"].append(username)
+            print(f"✅ ВСТУПИЛИ: @{username}", flush=True)
+
+        except UserAlreadyParticipantError:
+            result["already"].append(username)
+
+        except FloodWaitError as error:
+            wait_seconds = int(getattr(error, "seconds", 0) or 0)
+            result["failed"].append(
+                (username, f"FloodWait {wait_seconds} сек")
+            )
+            print(
+                f"⏳ TELEGRAM ОГРАНИЧИЛ ВСТУПЛЕНИЯ: ждать {wait_seconds} сек",
+                flush=True,
+            )
+            # При FloodWait прекращаем попытки в этом запуске.
+            remaining = missing[missing.index(username) + 1:]
+            result["skipped"].extend(remaining)
+            break
+
+        except Exception as error:
+            reason = str(error).replace("\n", " ")[:180]
+            result["failed"].append((username, reason))
+            print(
+                f"⚠️ НЕ УДАЛОСЬ ВСТУПИТЬ В @{username}: {reason}",
+                flush=True,
+            )
+
+        await asyncio.sleep(AUTO_JOIN_DELAY_SEC)
+
+    return result
 
 
 # ============================================================
@@ -2217,6 +2308,15 @@ async def main():
     )
 
     # --------------------------------------------------------
+    # АВТОВСТУПЛЕНИЕ В ПУБЛИЧНЫЕ ИСТОЧНИКИ ИЗ НАШЕЙ БАЗЫ
+    # --------------------------------------------------------
+    join_report = await auto_join_priority_sources()
+
+    # Даём Telegram немного времени обновить список диалогов после вступления.
+    if join_report["joined"]:
+        await asyncio.sleep(2)
+
+    # --------------------------------------------------------
     # СЧИТАЕМ ВСЕ ГРУППЫ И НАШ ПРИОРИТЕТНЫЙ СПИСОК
     # --------------------------------------------------------
     group_count = 0
@@ -2275,7 +2375,10 @@ async def main():
     test_message = (
         "✅ МОНИТОР ЗАЯВОК ЗАПУЩЕН — СТРОГИЙ ФИЛЬТР\n\n"
         f"Всего видно групп/каналов: {group_count}\n"
-        f"Из нашей собранной базы видно: {priority_visible}\n\n"
+        f"Из нашей собранной базы видно: {priority_visible}\n"
+        f"Автовступление: добавлено {len(join_report['joined'])}, "
+        f"ошибок {len(join_report['failed'])}, "
+        f"отложено {len(join_report['skipped'])}\n\n"
         "📌 Отправляются только заявки 7/10 и выше.\n"
         "🚫 Тендеры, субподряды, реклама услуг, вакансии, новости и отчёты блокируются.\n"
         "🚫 Заявки на чужую технику блокируются.\n\n"
@@ -2295,6 +2398,18 @@ async def main():
         print(
             "❌ ТЕСТОВОЕ СООБЩЕНИЕ В БОТА НЕ УШЛО",
             flush=True,
+        )
+
+    # Отдельный короткий отчёт, если какие-то публичные группы не удалось добавить.
+    if join_report["failed"]:
+        failed_lines = [
+            f"• @{username}: {reason}"
+            for username, reason in join_report["failed"][:12]
+        ]
+        send_to_bot(
+            "⚠️ НЕ УДАЛОСЬ АВТОМАТИЧЕСКИ ВСТУПИТЬ В НЕКОТОРЫЕ ГРУППЫ:\n\n"
+            + "\n".join(failed_lines)
+            + "\n\nЗакрытые группы и группы с заявкой на вступление нужно добавить вручную."
         )
 
     asyncio.create_task(
