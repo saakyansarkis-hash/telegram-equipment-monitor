@@ -551,19 +551,7 @@ work_words = [
     "прием грунта",
     "приём грунта",
 
-    "дренаж",
-    "ливневка",
-    "ливнёвка",
-    "водоотведение",
-    "наружные сети",
-    "наружные работы",
 
-    "вывоз снега",
-    "уборка снега",
-    "погрузка снега",
-    "расчистка снега",
-    "очистка от снега",
-    "снегоуборочные работы",
 ]
 
 
@@ -574,26 +562,12 @@ contract_words = [
     "ищу подрядчика",
     "нужен подрядчик",
     "нужны подрядчики",
-    "субподряд",
-    "субподрядчик",
-    "генподряд",
-    "генподрядчик",
-    "объем работ",
-    "объём работ",
-    "объемы работ",
-    "объёмы работ",
-    "вор",
-    "ведомость объемов",
-    "ведомость объёмов",
-    "запрос кп",
-    "коммерческое предложение",
-    "тендер",
     "требуется бригада",
     "ищем бригаду",
     "можно приступать",
     "начало работ",
-    "давальческий материал",
 ]
+
 
 
 # ============================================================
@@ -633,59 +607,21 @@ material_words = [
 # ============================================================
 
 request_words = [
-    "нужен",
-    "нужна",
-    "нужно",
-    "нужны",
-    "надо",
-    "необходим",
-    "необходима",
-    "необходимо",
-    "необходимы",
-    "требуется",
-    "требуются",
-    "ищу",
-    "ищем",
-    "ищет",
-    "ищут",
-    "кто может",
-    "кто сможет",
-    "кто есть",
-    "есть кто",
-    "возьму в аренду",
-    "возьмем в аренду",
-    "возьмём в аренду",
-    "арендовать",
-    "аренда",
-    "нужна техника",
-    "нужна спецтехника",
-    "нужен материал",
-    "нужны материалы",
-    "нужна доставка",
-    "купить",
-    "куплю",
-    "купим",
-    "приобрести",
-    "закупаем",
-    "закупаем материал",
-    "закупаем материалы",
-    "заказать",
-    "нужно заказать",
-    "кто привезет",
-    "кто привезёт",
-    "кто доставит",
-    "привезти",
-    "доставить",
-    "подрядчик",
-    "подрядчики",
-    "субподряд",
-    "объем работ",
-    "объём работ",
-    "объемы работ",
-    "объёмы работ",
-    "запрос кп",
-    "тендер",
+    "нужен", "нужна", "нужно", "нужны", "надо",
+    "необходим", "необходима", "необходимо", "необходимы",
+    "требуется", "требуются",
+    "ищу", "ищем", "ищет", "ищут",
+    "кто может", "кто сможет", "кто есть", "есть кто",
+    "возьму в аренду", "возьмем в аренду", "возьмём в аренду",
+    "арендовать", "нужна техника", "нужна спецтехника",
+    "нужен материал", "нужны материалы", "нужна доставка",
+    "купить", "куплю", "купим", "приобрести",
+    "заказать", "нужно заказать",
+    "кто привезет", "кто привезёт", "кто доставит",
+    "привезти", "доставить",
+    "подрядчик", "подрядчики",
 ]
+
 
 
 # ============================================================
@@ -736,6 +672,18 @@ ad_exclude_words = [
     "требуется сотрудник",
     "гражданство:",
     "фото паспорта",
+    "выполняем асфальтирование",
+    "выполняем благоустройство",
+    "выполняем земляные работы",
+    "предлагаем услуги",
+    "предлагаю услуги",
+    "наши услуги",
+    "наша компания выполняет",
+    "работаем по москве",
+    "работаем по московской области",
+    "цена от",
+    "стоимость от",
+    "заказывайте",
 ]
 
 exclude_words = [
@@ -760,6 +708,59 @@ job_patterns = [
 
 
 # ============================================================
+# ЖЁСТКИЙ ФИЛЬТР МУСОРА / НЕ-КЛИЕНТСКИХ ПУБЛИКАЦИЙ
+# ============================================================
+
+# Тендеры, субподряды, закупки и конкурсные процедуры не присылаем.
+blocked_procurement_patterns = [
+    r"\bтендер\w*\b",
+    r"\bаукцион\w*\b",
+    r"\bгосзакуп\w*\b",
+    r"\bзакупк\w*\b",
+    r"\bконкурсн\w*\s+документац\w*\b",
+    r"\bсубподряд\w*\b",
+    r"\bгенподряд\w*\b",
+    r"\bведомост\w*\s+об[ъь]ем\w*\b",
+    r"(?<![а-яёa-z])вор(?![а-яёa-z])",
+    r"\bзапрос\s+кп\b",
+]
+
+# Новости, отчеты и уже выполненные работы — не заявки.
+news_completed_patterns = [
+    r"\bадминистрац\w*\b.{0,120}\b(провел|провела|провели|сообщил|сообщила|сообщили)\w*\b",
+    r"\b(отремонтировали|благоустроили|обустроили|построили|завершили|выполнили|провели)\b.{0,100}\b(работ|ремонт|дорог|двор|площадк|благоустрой)\w*\b",
+    r"\bподвели\s+итоги\b",
+    r"\bитоги\s+сезона\b",
+    r"\bвстреч\w*\s+с\s+жител\w*\b",
+]
+
+# Явная реклама исполнителя/владельца техники.
+provider_ad_patterns = [
+    r"\b(выполняем|оказываем|предлагаем|предлагаю)\b.{0,80}\b(услуг|работ|асфальт|благоустрой|землян|спецтехник)\w*\b",
+    r"\b(сдаю|сдаем|сдаём|сдам)\b.{0,60}\b(в\s+аренду|техник|экскаватор|самосвал|каток|погрузчик)\w*\b",
+    r"\b(наш\w*\s+автопарк|техника\s+в\s+наличии|свободн\w*\s+техник)\b",
+    r"\b(цена|стоимость)\s*[-—:]?\s*от\s+\d+",
+]
+
+# Демонтаж зданий сам по себе не наша заявка. Пропускаем его только при наличии
+# земляных работ / вывоза / расчистки / последующего благоустройства.
+demolition_building_patterns = [
+    r"\bдемонтаж\w*\b.{0,80}\b(дом|здани|ангар|гараж|склад|сооружени)\w*\b",
+    r"\bснос\w*\b.{0,80}\b(дом|здани|ангар|гараж|склад|сооружени)\w*\b",
+]
+
+demolition_allowed_context = [
+    "земляные работы", "разработка грунта", "вывоз грунта", "вывоз земли",
+    "вывоз строительного мусора", "погрузка", "расчистка территории",
+    "подготовка участка", "благоустройство", "асфальтирование",
+    "экскаватор-погрузчик", "экскаватор погрузчик",
+]
+
+
+def matches_any_regex(text, patterns):
+    return any(re.search(p, text, flags=re.IGNORECASE | re.DOTALL) for p in patterns)
+
+# ============================================================
 # НЕНУЖНАЯ ТЕХНИКА
 # ============================================================
 
@@ -771,6 +772,15 @@ unwanted_equipment_patterns = [
     r"\bбульдозер\w*\b",
     r"\bтрактор\w*\b",
     r"\bгрейдер\w*\b",
+    r"\bавтовышк\w*\b",
+    r"\bбашенн\w*\s+кран\w*\b",
+    r"\bтрал\w*\b",
+    r"\bдлинномер\w*\b",
+    r"\bбуров\w*\b",
+    r"\bассенизатор\w*\b",
+    r"\bилосос\w*\b",
+    r"\bбетононасос\w*\b",
+    r"\bкомпрессор\w*\b",
 ]
 
 
@@ -843,12 +853,10 @@ def find_phone(text):
 # ============================================================
 
 BIG_LEAD_WORDS = [
-    "тендер", "запрос кп", "коммерческое предложение", "вор",
-    "ведомость объемов", "ведомость объёмов", "генподряд", "генподрядчик",
-    "субподряд", "субподрядчик", "требуется подрядчик", "ищем подрядчика",
-    "нужен подрядчик", "комплексное благоустройство", "благоустройство под ключ",
+    "комплексное благоустройство", "благоустройство под ключ",
     "строительство дороги", "строительство дорог", "асфальтирование",
 ]
+
 
 AREA_PATTERN = re.compile(r"\b(\d[\d\s]{1,8})\s*(м2|м²|кв\.?\s*м)\b", re.IGNORECASE)
 VOLUME_PATTERN = re.compile(r"\b(\d[\d\s]{1,8})\s*(м3|м³|куб(?:ов|а)?)\b", re.IGNORECASE)
@@ -883,16 +891,16 @@ def detect_big_lead(text_lower):
 def categorize_lead(text_lower, classification):
     equipment_found = classification["equipment_found"]
     work_found = classification["work_found"]
-    contract_found = classification["contract_found"]
     if any(x in text_lower for x in ["самосвал", "howo", "хово", "8x4", "8×4", "6x4", "6×4"]):
         return "🚛 HOWO / САМОСВАЛ"
-    if contract_found or any(x in text_lower for x in ["тендер", "вор", "запрос кп", "генподряд", "субподряд"]):
-        return "🏗 КРУПНЫЙ ПОДРЯД"
     if any(x in text_lower for x in ["асфальт", "благоустройство", "бордюр", "дорог", "парков"]):
         return "🛣 АСФАЛЬТ / БЛАГОУСТРОЙСТВО"
+    if any(x in text_lower for x in ["землян", "грунт", "котлован", "транше", "планиров", "отсып", "засып"]):
+        return "🚜 ЗЕМЛЯНЫЕ РАБОТЫ"
     if equipment_found and not work_found:
-        return "🚜 ТЕХНИКА РЯДОМ"
-    return "📋 ДРУГОЕ ПОДХОДЯЩЕЕ"
+        return "🚜 ТЕХНИКА"
+    return "📋 ПОДХОДЯЩАЯ ЗАЯВКА"
+
 
 
 # ============================================================
@@ -1446,75 +1454,36 @@ def calculate_score(text, classification, location_found, priority_source=False)
 
     equipment_found = classification["equipment_found"]
     work_found = classification["work_found"]
-    contract_found = classification["contract_found"]
     material_found = classification["material_found"]
 
-    if any(
-        word in text
-        for word in [
-            "срочно",
-            "сегодня",
-            "прямо сейчас",
-            "на сейчас",
-            "в течение часа",
-        ]
-    ):
-        score += 3
-
-    elif any(
-        word in text
-        for word in [
-            "завтра",
-            "на завтра",
-            "утром",
-        ]
-    ):
+    # Явное намерение заказать / найти исполнителя — главный сигнал.
+    if find_matches(text, request_words):
         score += 2
 
-    if contract_found:
+    if any(word in text for word in ["срочно", "сегодня", "прямо сейчас", "на сейчас", "в течение часа"]):
         score += 3
+    elif any(word in text for word in ["завтра", "на завтра", "утром"]):
+        score += 2
 
     if len(work_found) >= 3:
         score += 3
     elif work_found:
-        score += 2
-
-    if any(
-        word in text
-        for word in [
-            "экскаватор-погрузчик",
-            "экскаватор погрузчик",
-            "jcb",
-            "джсб",
-        ]
-    ):
         score += 3
 
-    elif any(
-        word in text
-        for word in [
-            "мини-погрузчик",
-            "мини погрузчик",
-            "минипогрузчик",
-            "bobcat",
-            "бобкэт",
-            "бобкат",
-            "самосвал",
-            "каток",
-        ]
-    ):
-        score += 2
+    if any(word in text for word in ["экскаватор-погрузчик", "экскаватор погрузчик", "jcb", "джсб"]):
+        score += 4
+    elif any(word in text for word in ["мини-погрузчик", "мини погрузчик", "минипогрузчик", "bobcat", "бобкэт", "бобкат", "самосвал", "каток"]):
+        score += 3
 
     if material_found:
         score += 1
-
     if location_found:
         score += 1
-
     if priority_source:
         score += 1
 
     return min(score, 10)
+
 
 
 # ============================================================
@@ -1855,6 +1824,27 @@ async def handler(event):
                 print("REJECT: job", flush=True)
                 return
 
+        # Жёстко отсекаем тендеры/субподряд/закупки.
+        if matches_any_regex(text_lower, blocked_procurement_patterns):
+            print("REJECT: тендер/субподряд/закупка", flush=True)
+            return
+
+        # Отсекаем новости, отчёты и публикации о уже выполненных работах.
+        if matches_any_regex(text_lower, news_completed_patterns):
+            print("REJECT: новость/отчёт/выполненные работы", flush=True)
+            return
+
+        # Отсекаем рекламу чужих услуг и предложение своей техники.
+        if matches_any_regex(text_lower, provider_ad_patterns):
+            print("REJECT: реклама исполнителя/техники", flush=True)
+            return
+
+        # Демонтаж зданий пропускаем только если есть смежные наши работы.
+        if matches_any_regex(text_lower, demolition_building_patterns):
+            if not any(word in text_lower for word in demolition_allowed_context):
+                print("REJECT: демонтаж зданий без наших смежных работ", flush=True)
+                return
+
         # ----------------------------------------------------
         # КЛАССИФИКАЦИЯ
         # ----------------------------------------------------
@@ -1917,14 +1907,14 @@ async def handler(event):
         # ГЕОГРАФИЯ
         # ----------------------------------------------------
         if classification["is_work_lead"]:
-            lead_type = "🏗 РАБОТЫ / ПОДРЯД"
+            lead_type = "🏗 РАБОТЫ"
             geo_status, location_found = analyze_geo_for_work(
                 text_lower
             )
 
             if geo_status == "outside":
                 print(
-                    "REJECT: подряд явно вне Москвы/МО",
+                    "REJECT: работы явно вне Москвы/МО",
                     flush=True,
                 )
                 return
@@ -1957,20 +1947,11 @@ async def handler(event):
         tg_contact = extract_telegram_contact(text)
         big_lead, big_reasons = detect_big_lead(text_lower)
 
-        # Обычная заявка: телефон обязателен.
-        # Крупный подряд/тендер/ВОР: без телефона не теряем,
-        # если есть Telegram-контакт или публичный источник.
-        if not phone:
-            if not (
-                classification["is_work_lead"]
-                and big_lead
-                and (tg_contact or chat_username)
-            ):
-                print(
-                    "REJECT: НЕТ ТЕЛЕФОНА И НЕТ ПРИЗНАКА КРУПНОГО ПОДРЯДА",
-                    flush=True,
-                )
-                return
+        # Для качества оставляем заявки, где есть прямой контакт:
+        # телефон или Telegram пользователя в тексте.
+        if not phone and not tg_contact:
+            print("REJECT: нет телефона или Telegram-контакта", flush=True)
+            return
 
         print("Телефон:", phone or "нет", flush=True)
         print("Telegram-контакт:", tg_contact or "нет", flush=True)
@@ -2004,17 +1985,17 @@ async def handler(event):
             priority_source=priority_source,
         )
 
-        if big_lead and classification["is_work_lead"]:
-            score = min(10, score + 2)
+        # В Telegram отправляем только сильные заявки 7/10 и выше.
+        if score < 7:
+            print(f"REJECT: низкий приоритет {score}/10", flush=True)
+            return
 
-        if score >= 8:
-            priority = "🔥🔥🔥 СРОЧНО ПОЗВОНИТЬ / ПРОВЕРИТЬ"
-        elif score >= 6:
+        if score >= 9:
+            priority = "🔥🔥🔥 СРОЧНАЯ ЗАЯВКА"
+        elif score >= 8:
             priority = "🔥🔥 ХОРОШАЯ ЗАЯВКА"
-        elif score >= 4:
-            priority = "🔥 ПОДХОДИТ"
         else:
-            priority = "🟡 НУЖНО УТОЧНИТЬ"
+            priority = "🔥 ПОДХОДИТ"
 
         category = categorize_lead(text_lower, classification)
 
@@ -2028,10 +2009,6 @@ async def handler(event):
             text,
             phone,
             chat_name,
-        )
-
-        auto_reply = build_auto_reply(
-            category
         )
 
         # ----------------------------------------------------
@@ -2089,14 +2066,6 @@ async def handler(event):
                 + "\n"
             )
 
-        contract_line = ""
-        if contract_found:
-            contract_line = (
-                "📋 Подряд: "
-                + ", ".join(contract_found)
-                + "\n"
-            )
-
         material_line = ""
         if material_found:
             material_line = (
@@ -2114,56 +2083,36 @@ async def handler(event):
             else "📢 Источник: одна из ваших текущих групп"
         )
 
+        area_or_volume = (
+            extract_first_number(AREA_PATTERN, text_lower)
+            or extract_first_number(VOLUME_PATTERN, text_lower)
+            or "не указан"
+        )
+        price_line = extract_first_number(MONEY_PATTERN, text_lower) or "не указана"
+
+        # Причина приоритета — одна короткая строка.
+        reason_parts = []
+        if equipment_found:
+            reason_parts.append("нужна наша техника")
+        if work_found:
+            reason_parts.append("наши работы")
+        if location_found:
+            reason_parts.append("подходящая география")
+        if phone or tg_contact:
+            reason_parts.append("есть контакт")
+        priority_reason = ", ".join(reason_parts[:3]) or "подходящая заявка"
+
         alert = (
             f"{priority}\n"
-            f"{lead_type}\n"
-            f"⭐ Приоритет: {score}/10\n"
-            f"{source_line}\n\n"
-
-            f"{equipment_line}"
-            f"{work_line}"
-            f"{contract_line}"
-            f"{material_line}"
-
+            f"⭐ Приоритет: {score}/10\n\n"
+            f"🚧 Вид работ: {category}\n"
             f"📍 Район: {geo_line}\n"
-            f"📂 Категория: {category}\n"
-            f"📞 ТЕЛЕФОН: {phone or 'нет'}\n"
-            f"💬 Telegram-контакт: {tg_contact or 'нет'}\n"
-            f"📐 Объем/площадь: {extract_first_number(AREA_PATTERN, text_lower) or extract_first_number(VOLUME_PATTERN, text_lower) or 'не указан'}\n"
-            f"💰 Цена/ставка: {extract_first_number(MONEY_PATTERN, text_lower) or 'не указана'}\n"
-            f"🧭 Крупный лид: {'ДА' if big_lead else 'нет'}\n"
-            f"{('📝 Причины: ' + ', '.join(big_reasons) + chr(10)) if big_reasons else ''}\n"
-
-            f"{('🚛 ЭКОНОМИКА HOWO (предварительно):' + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Оценка: ' + howo_assessment['label'] + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Почему: ' + howo_assessment['reason'] + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Плечо: ' + format_number(howo['shoulder_km'], ' км') + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Ставка: ' + (format_number(howo['rate_m3'], ' ₽/м³') if howo['rate_m3'] is not None else format_number(howo['rate_trip'], ' ₽/рейс')) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Кузов: ' + format_number(HOWO_BODY_M3, ' м³') + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Расход принят: ' + format_number(HOWO_FUEL_L_PER_100KM, ' л/100км') + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Выручка/рейс: ' + format_money(howo['revenue_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Топливо/рейс: ' + format_money(howo['fuel_cost_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Остаток после топлива/рейс: ' + format_money(howo['after_fuel_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Остаток после топлива/день: ' + format_money(howo['after_fuel_day']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Водитель/день: ' + format_money(howo['driver_day']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Лизинг HOWO/день: ' + format_money(howo['lease_day']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Ремонтный резерв/рейс: ' + format_money(howo['repair_reserve_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Резина/рейс: ' + format_money(howo['tire_cost_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Полная себестоимость/рейс: ' + format_money(howo['full_cost_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• ПРИБЫЛЬ/рейс: ' + format_money(howo['profit_trip']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• ПРИБЫЛЬ/день: ' + format_money(howo['profit_day']) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('• Маржа: ' + (str(round(howo['margin_pct'], 1)) + '%' if howo['margin_pct'] is not None else 'не рассчитано') + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-            f"{('⚠️ Если зарплата водителя или лизинг не заданы, они считаются как 0.' + chr(10) + chr(10)) if category == '🚛 HOWO / САМОСВАЛ' else ''}"
-
-            f"🆔 ID лида: {lead_id}\n\n"
-            f"✉️ ГОТОВЫЙ ОТВЕТ ЗАКАЗЧИКУ:\n"
-            f"{auto_reply}\n\n"
-
-            f"💬 ПОЛНЫЙ ТЕКСТ ЗАЯВКИ:\n"
-            f"{text}\n\n"
-
-            f"👤 Автор: {sender_name}\n"
-            f"📢 Группа: {chat_name}"
+            f"📐 Объём/площадь: {area_or_volume}\n"
+            f"💰 Бюджет/ставка: {price_line}\n"
+            f"📞 Телефон: {phone or 'нет'}\n"
+            f"💬 Telegram: {tg_contact or 'нет'}\n\n"
+            f"📝 Текст заявки:\n{text}\n\n"
+            f"Причина: {priority_reason}"
         )
 
         if message_link:
@@ -2322,46 +2271,17 @@ async def main():
     # ТЕСТ
     # --------------------------------------------------------
     test_message = (
-        "✅ МОНИТОР ЗАЯВОК ЗАПУЩЕН — FILTER v11\n\n"
-
+        "✅ МОНИТОР ЗАЯВОК ЗАПУЩЕН — СТРОГИЙ ФИЛЬТР\n\n"
         f"Всего видно групп/каналов: {group_count}\n"
         f"Из нашей собранной базы видно: {priority_visible}\n\n"
-
-        "📢 ОБРАБАТЫВАЮТСЯ ВСЕ ГРУППЫ И КАНАЛЫ, "
-        "КОТОРЫЕ ВИДИТ ВАШ TELEGRAM-АККАУНТ.\n"
-        "⭐ Наш собранный список используется как дополнительный приоритет.\n\n"
-
-        "🚜 ЗАЯВКИ ТОЛЬКО НА ТЕХНИКУ:\n"
-        "ЮВАО + Люберцы / Котельники / Дзержинский / "
-        "Лыткарино / Жуковский / Раменское и ближайшая зона.\n\n"
-
-        "🏗 ЗАЯВКИ НА РАБОТЫ / ПОДРЯДЫ:\n"
-        "ВСЯ Москва + ВСЯ Московская область.\n\n"
-
-        "📞 ТЕЛЕФОН В ТЕКСТЕ ЗАЯВКИ ОБЯЗАТЕЛЕН.\n"
-        "Без телефона заявка НЕ отправляется.\n\n"
-
-        "🚜 Наша техника:\n"
-        "• Экскаватор-погрузчик\n"
-        "• Мини-погрузчик\n"
-        "• HOWO / самосвал 20 м³\n"
-        "• Каток 4 т\n\n"
-
-        "🏗 Наши работы:\n"
-        "• Асфальтирование\n"
-        "• Благоустройство\n"
-        "• Дороги / парковки / площадки\n"
-        "• Бордюры / основания\n"
-        "• Земляные работы\n"
-        "• Демонтаж / вывоз грунта\n"
-        "• Дренаж / наружные сети\n"
-        "• Подряд / субподряд / ВОР / тендер\n\n"
-
-        "🔁 Дубли: не чаще 1 раза за 24 часа.\n\n"
-
-        "📂 Категории: техника рядом / HOWO / асфальт и благоустройство / крупный подряд.\n"
-        "📞 Обычная заявка: телефон обязателен.\n"
-        "🏗 Крупный подряд без телефона: не теряем, если есть Telegram-контакт или публичная ссылка."
+        "📌 Отправляются только заявки 7/10 и выше.\n"
+        "🚫 Тендеры, субподряды, реклама услуг, вакансии, новости и отчёты блокируются.\n"
+        "🚫 Заявки на чужую технику блокируются.\n\n"
+        "🚜 Наша техника: экскаватор-погрузчик, мини-погрузчик, HOWO/самосвал, каток.\n"
+        "🏗 Наши работы: асфальтирование, благоустройство, основания, бордюры, земляные работы, вывоз/погрузка грунта.\n\n"
+        "📍 Техника/материал: локальная зона. Работы: Москва и Московская область.\n"
+        "📞 Для отправки нужен телефон или Telegram-контакт.\n"
+        "🔁 Дубли: не чаще 1 раза за 24 часа."
     )
 
     if send_to_bot(test_message):
