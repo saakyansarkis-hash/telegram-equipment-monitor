@@ -217,6 +217,8 @@ PRIORITY_SOURCE_USERNAMES = {
     "grad_zhukovskiy",
     "ugorodok",
     "vm_volkov",
+    "moskva_spetstekhnika",
+    "spectehnika_2",
 }
 
 # Инвайт-группы без стабильного username.
